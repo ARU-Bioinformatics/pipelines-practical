@@ -228,6 +228,25 @@
   const modelOf = (s) => (s.provider === 'gemini' ? geminiModelOf(s) : s.provider === 'anthropic' ? anthropicModelOf(s) : s.openaiModel || 'model');
   /** Gemini and Anthropic always need a key; an OpenAI-compatible server (e.g. a local one) may not */
   const needsKey = (s) => s.provider !== 'openai';
+  /* A model can be "experiencing high demand" (HTTP 503), and each Gemini model has its own
+     free-tier limits (HTTP 429). Live mode then asks these models in turn; the answer says which
+     model replied. */
+  const GEMINI_FALLBACKS = (Array.isArray(CFG.geminiFallbackModels) ? CFG.geminiFallbackModels : ['gemini-3.6-flash', 'gemini-3.5-flash-lite'])
+    .map((m) => String(m).trim().replace(/^models\//, ''))
+    .filter(Boolean);
+  const BUSY = [500, 502, 503, 504, 529];
+  const skipWord = (status) => (status === 404 ? 'not found' : status === 429 ? 'over its limit' : 'busy');
+  /** a pause that the Stop button can cut short */
+  const pause = (ms, signal) =>
+    new Promise((resolve, reject) => {
+      const t = setTimeout(resolve, ms);
+      const stop = () => {
+        clearTimeout(t);
+        reject(new DOMException('Stopped', 'AbortError'));
+      };
+      if (signal && signal.aborted) stop();
+      else if (signal) signal.addEventListener('abort', stop, { once: true });
+    });
 
   /* ------------------------------------------------------------------
      the assistant panel
@@ -854,13 +873,22 @@
       let text = '';
       const t0 = performance.now();
       try {
-        await this.streamLive(hist, (delta) => {
-          text += delta;
-          this.fill(body, text + ' ▍');
-          this.scroll('chat');
-        }, this._abort.signal);
+        const res = await this.streamLive(
+          hist,
+          (delta) => {
+            text += delta;
+            this.fill(body, text + ' ▍');
+            this.scroll('chat');
+          },
+          this._abort.signal,
+          null,
+          (note) => {
+            if (!text) body.innerHTML = `<div class="muted" style="font-size:0.85em;margin-bottom:0.35em">${esc(note)}</div><span class="ai-typing"><i></i><i></i><i></i></span>`;
+          }
+        );
         this.fill(body, text || '(no reply)');
-        b.appendChild(h('div.ai-badge', { html: `live · ${esc(modelOf(this.settings))} · ${((performance.now() - t0) / 1000).toFixed(1)} s` }));
+        const via = res.skipped.length ? ` (${res.skipped.map((x) => x.model + ' ' + skipWord(x.status)).join(', ')})` : '';
+        b.appendChild(h('div.ai-badge', { html: `live · ${esc(res.model + via)} · ${((performance.now() - t0) / 1000).toFixed(1)} s` }));
         this.msgs.chat.push({ role: 'assistant', content: text });
         bus.emit('ai:answer', { entry: 'live', mode: 'live' });
       } catch (e) {
@@ -877,9 +905,14 @@
         this.sendBtn.innerHTML = MG.icon('send') + '<span>Send</span>';
       }
     }
-    async streamLive(messages, onDelta, signal, cfg) {
+    /* Stream an answer from the chosen service. For Gemini, when a model is busy (HTTP 5xx), over
+       its free-tier limit (429) or not found (404), the fallback models are asked in turn; the last
+       model asked (for other services, the only one) gets a second try after a short pause if it is
+       busy. Returns { model, skipped }: the model that answered and the ones that could not. */
+    async streamLive(messages, onDelta, signal, cfg, onNote) {
       const s = (cfg && cfg.settings) || this.settings;
       const key = cfg ? cfg.key : this.key;
+      const note = onNote || (() => {});
       // turns must alternate between user and assistant: join neighbours of the same role
       messages = messages.reduce((out, m) => {
         const last = out[out.length - 1];
@@ -887,6 +920,47 @@
         else out.push({ role: m.role, content: m.content });
         return out;
       }, []);
+      const gemini = s.provider === 'gemini';
+      const chain = gemini ? [geminiModelOf(s)].concat(GEMINI_FALLBACKS.filter((m, i, a) => a.indexOf(m) === i && m !== geminiModelOf(s))) : [modelOf(s)];
+      const skipped = [];
+      let first = null;
+      for (let i = 0; i < chain.length; i++) {
+        for (let attempt = 1; ; attempt++) {
+          let started = false;
+          try {
+            await this.streamOnce(s, key, chain[i], messages, (d) => {
+              started = true;
+              onDelta(d);
+            }, signal);
+            return { model: chain[i], skipped };
+          } catch (e) {
+            // only an HTTP error that came before any text is worth another try
+            if (e.name === 'AbortError' || started || !e.status) throw e;
+            const busy = BUSY.includes(e.status);
+            const last = i === chain.length - 1;
+            if (i === 0 && attempt === 1) first = e;
+            // "high demand" usually lasts minutes: go straight to the next model …
+            if (gemini && !last && (busy || e.status === 429 || e.status === 404)) {
+              skipped.push({ model: chain[i], status: e.status });
+              note(`${chain[i]} ${e.status === 404 ? 'was not found' : e.status === 429 ? 'is over its free-tier limit' : 'is busy'} – asking ${chain[i + 1]} instead…`);
+              break;
+            }
+            // … and give the last one a second try after a short pause
+            if (last && busy && attempt === 1) {
+              note(`${chain[i]} is busy – trying again…`);
+              await pause(1500 + Math.random() * 1500, signal);
+              continue;
+            }
+            // nothing answered: report the chosen model's error, and what the others said
+            if (i === 0) throw e;
+            first.message += ` (Also tried: ${skipped.slice(1).map((x) => x.model + ' – HTTP ' + x.status).concat(chain[i] + ' – HTTP ' + e.status).join('; ')}.)`;
+            throw first;
+          }
+        }
+      }
+    }
+    /** one request: the answer is passed to onDelta as it arrives; HTTP errors carry .status */
+    async streamOnce(s, key, model, messages, onDelta, signal) {
       let r;
       if (s.provider === 'anthropic') {
         r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -900,7 +974,7 @@
         });
       } else if (s.provider === 'gemini') {
         // Google's Gemini API (generateContent, streamed as server-sent events); the whole conversation is sent each time
-        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModelOf(s))}:streamGenerateContent?alt=sse`, {
+        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
           body: JSON.stringify({
@@ -935,16 +1009,21 @@
           detail = r.statusText;
         }
         const badKey = r.status === 401 || r.status === 403 || reason === 'API_KEY_INVALID';
+        const gem = s.provider === 'gemini';
         const why = badKey
           ? 'The API key was not accepted.'
           : r.status === 404
-            ? 'The model name may be wrong, or the model has been retired – check the model name in ⚙.'
+            ? `The model name${gem ? ' (' + model + ')' : ''} may be wrong, or the model has been retired – check the model name in ⚙.`
             : r.status === 429
-              ? s.provider === 'gemini'
+              ? gem
                 ? 'Too many requests: the free tier allows only a few requests per minute and per day – wait a minute and try again.'
                 : 'Too many requests or no credit left – try again in a minute.'
-              : '';
-        throw new Error(`HTTP ${r.status}. ${why} ${detail}`.trim());
+              : BUSY.includes(r.status)
+                ? gem
+                  ? `Google’s servers are busy for ${model} (“high demand”). This is on Google’s side, not a problem with your key: wait a minute and try again, or choose another model in ⚙.`
+                  : 'The service is busy or had a temporary problem – try again in a minute.'
+                : '';
+        throw Object.assign(new Error(`HTTP ${r.status}. ${why} ${detail}`.trim()), { status: r.status });
       }
       const reader = r.body.getReader();
       const dec = new TextDecoder();
@@ -968,9 +1047,9 @@
           }
           if (s.provider === 'anthropic') {
             if (j.type === 'content_block_delta' && j.delta && j.delta.type === 'text_delta') onDelta(j.delta.text);
-            else if (j.type === 'error') throw new Error((j.error && j.error.message) || 'stream error');
+            else if (j.type === 'error') throw Object.assign(new Error((j.error && j.error.message) || 'stream error'), { status: j.error && j.error.type === 'overloaded_error' ? 529 : undefined });
           } else if (s.provider === 'gemini') {
-            if (j.error) throw new Error(j.error.message || 'stream error');
+            if (j.error) throw Object.assign(new Error(j.error.message || 'stream error'), { status: j.error.code });
             if (j.promptFeedback && j.promptFeedback.blockReason) throw new Error('Gemini did not answer (' + j.promptFeedback.blockReason + ').');
             const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
             parts.forEach((p) => {
@@ -1061,8 +1140,8 @@
         out.textContent = 'Testing…';
         let got = '';
         try {
-          await this.streamLive([{ role: 'user', content: 'Reply with the single word: ready' }], (d) => (got += d), undefined, read());
-          out.textContent = '✓ Connected: “' + got.trim().slice(0, 40) + '”';
+          const res = await this.streamLive([{ role: 'user', content: 'Reply with the single word: ready' }], (d) => (got += d), undefined, read(), (note) => (out.textContent = note));
+          out.textContent = '✓ Connected: “' + got.trim().slice(0, 40) + '”' + (res.skipped.length ? ` – from ${res.model} (${res.skipped.map((x) => x.model + ' ' + skipWord(x.status)).join(', ')})` : '');
         } catch (e) {
           out.textContent = '✗ ' + e.message;
         }

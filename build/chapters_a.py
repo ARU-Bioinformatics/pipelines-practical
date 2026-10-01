@@ -6,9 +6,9 @@ P = 'cyp2c19-pipeline'
 
 def ch_start():
     body = f'''
-  {callout('lecture', 'Claerbout’s principle', f"""<blockquote class="quote">“An article about computational result is advertising, not scholarship. The actual scholarship is the full software environment, code and data, that produced the result.”</blockquote>
-  <p class="small muted">The lecture’s summary of the idea of Claerbout &amp; Karrenbach (<i>Electronic documents give reproducible research a new meaning</i>, SEG Technical Program Expanded Abstracts, 1992, 601–604). Its best-known wording is Buckheit &amp; Donoho’s (1995): “An article about computational science in a scientific publication is not the scholarship itself, it is merely advertising of the scholarship. The actual scholarship is the complete software development environment and the complete set of instructions which generated the figures.”</p>
-  <p>Claerbout and Karrenbach also came up with four basic rules for reproducible research at the Stanford Exploration Project: every result could be <b>burned</b> (deleted), <b>built</b> again, <b>viewed</b>, and its folder <b>cleaned</b> of intermediate files – each with one command. By the end of this practical your own analysis will pass the same test.</p>""")}
+  {callout('concept', 'Claerbout’s principle', f"""<blockquote class="quote">“An article about computational science in a scientific publication is not the scholarship itself, it is merely advertising of the scholarship. The actual scholarship is the complete software development environment and the complete set of instructions which generated the figures.”</blockquote>
+  <p class="small muted">J. B. Buckheit and D. L. Donoho (1995), <i>WaveLab and reproducible research</i>, summarising the principle of Jon Claerbout of the Stanford Exploration Project.</p>
+  <p>At the Stanford Exploration Project, Jon Claerbout and Martin Karrenbach set four basic rules for reproducible research: every result can be <b>burned</b> (deleted), <b>built</b> again, <b>viewed</b>, and its folder <b>cleaned</b> of intermediate files – each with one command. By the end of this practical your own analysis will pass the same test.</p>""")}
 
   <p>In the reads-to-variants practical you turned sequencing reads into variant calls, typing one command at a time. Could someone else – or you, in six months – get <i>exactly</i> the same calls again? Only if they know <b>which data</b> you used, <b>every command and option</b>, in <b>which order</b>, with <b>which settings</b>, and with <b>which versions</b> of the programs. A pipeline writes all of that down in a form a computer can run.</p>
 
@@ -49,7 +49,7 @@ def ch_start():
      """<p>At least: the <b>raw data</b> – the exact read files and the exact reference genome (version and any changes) – ideally with checksums; <b>every command</b>, in order, with all its options; the <b>parameters</b> (e.g. the filter thresholds); the <b>program versions</b> (and the libraries they were built with); the <b>computing environment</b> (operating system, how the software was installed); anything done <b>by hand</b> (renamed files, a step repeated after an error, a file edited in a text editor). A shell history or lab-book notes rarely record all of this – that is what this practical fixes.</p>""")}
   {mcq('s-scholar', 'In Claerbout’s principle, a paper is only “advertising”. What is the “scholarship”?', [
       ('the figures and tables in the paper', False, 'The figures are part of the advertising: they show the results but cannot regenerate them.'),
-      ('the full software environment, code and data that produced the results', True, 'Only these let someone regenerate – and check – every result.'),
+      ('the complete software environment and the complete set of instructions that produced the results', True, 'Only these let someone regenerate – and check – every result. (Today we would add: and the data they were run on.)'),
       ('the methods section of the paper', False, 'A methods section describes the analysis in words; it cannot be run, and it is rarely complete.'),
       ('the peer reviews', False, 'Reviewers usually see only the advertising, too.'),
   ])}
@@ -157,7 +157,7 @@ def ch_script():
       task('h-run2', f'Run it again: {cmd("bash workflow/run_all.sh")}. Nothing has changed – what does the script do?', auto='script:done code=0 path~run_all'),
   ])}
   {q('h-rerun', 'The second run redid every step. Why is that a problem for a real project – say 100 samples, when one new sample arrives, or when only the filter threshold changes?',
-     """<p>A script has no idea what is already done: it cannot tell that the BAM files are up to date, so it repeats hours of mapping to change one threshold or add one sample. It lacks the two features the lecture named: <b>dependencies</b> (which file is made from which) and <b>re-entrancy</b> (continuing from where it stopped, redoing only what is needed). You could add checks by hand (“if the file exists, skip”) – but then an outdated file would never be updated.</p>""")}
+     """<p>A script has no idea what is already done: it cannot tell that the BAM files are up to date, so it repeats hours of mapping to change one threshold or add one sample. It lacks two things a workflow engine provides: <b>dependencies</b> (which file is made from which) and <b>re-entrancy</b> (continuing from where it stopped, redoing only what is needed). You could add checks by hand (“if the file exists, skip”) – but then an outdated file would never be updated.</p>""")}
 
   <h2 id="h-fail">2.3 When a step fails</h2>
   <p>A typo is all it takes. Break the script on purpose and see what it reports.</p>
@@ -289,7 +289,7 @@ print(vcf_name("NA12878", kind="raw"))       # a keyword argument: name=value'''
       task('y-script', 'Create <code>workflow/scripts/hello.py</code> (button above).', check='exists:workflow/scripts/hello.py'),
       task('y-pyrun', f'In the <b>Terminal</b>, in your project folder: {cmd("python workflow/scripts/hello.py")}', auto='py:script ok=true argv~hello.py'),
   ])}
-  {callout('lecture', 'Claerbout on interactive programs', """<p>“Interactive programs should always be able to save their state so they can restart. Otherwise, dependence on an interactive program can be a form of slavery (nonreproducible research).” – Jon Claerbout, <a href="https://sepwww.stanford.edu/sep/jon/reproducible.html" target="_blank" rel="noopener">Reproducible computational research</a></p>""")}
+  {callout('concept', 'Claerbout on interactive programs', """<p>“Interactive programs should always be able to save their state so they can restart. Otherwise, dependence on an interactive program can be a form of slavery (nonreproducible research).” – Jon Claerbout, <a href="https://sepwww.stanford.edu/sep/jon/reproducible.html" target="_blank" rel="noopener">Reproducible computational research</a></p>""")}
   {ai('py:nb', 'Ask the assistant: notebook or script?')}
 '''
     return chapter('python', 3, 'Python for Snakemake', 'notebook', 'Python for Snakemake', 35,

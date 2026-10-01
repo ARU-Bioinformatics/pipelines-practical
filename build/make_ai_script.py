@@ -896,7 +896,7 @@ A good test: give the folder to someone else and ask them to run it using only t
 add(id='cmp:claerbout', chapter='compare',
     prompt="Does my project meet Claerbout's principle?",
     keywords=[r'claerbout|principle|reproducib|scholarship'],
-    response=r"""Claerbout's principle: *"An article about computational result is advertising, not scholarship. The actual scholarship is the full software environment, code and data, that produced the result."* A practical checklist for your project folder:
+    response=r"""Claerbout's principle, in Buckheit and Donoho's words (1995): *"An article about computational science in a scientific publication is not the scholarship itself, it is merely advertising of the scholarship. The actual scholarship is the complete software development environment and the complete set of instructions which generated the figures."* Today we would add the data. A practical checklist for your project folder:
 
 | Question | Where it is answered |
 | --- | --- |

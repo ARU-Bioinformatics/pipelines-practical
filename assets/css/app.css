@@ -153,8 +153,8 @@ code { background: var(--panel-3); padding: 0.05em 0.35em; border-radius: 4px; }
 .callout.pharm .co-t { color: var(--pharm); }
 .callout.warn { background: var(--warn-soft); border-color: #f0dca3; }
 .callout.warn .co-t { color: var(--warn); }
-.callout.lecture { background: #f1f6ee; border-color: #d3e6c7; }
-.callout.lecture .co-t { color: #3f6b22; }
+.callout.concept { background: #f1f6ee; border-color: #d3e6c7; }
+.callout.concept .co-t { color: #3f6b22; }
 
 /* activity cards */
 .activity { border: 1px solid #f1d2bb; border-left: 4px solid var(--act); background: #fffaf6; border-radius: var(--radius); padding: 12px 16px; margin: 1.1em 0; }

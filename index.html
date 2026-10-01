@@ -38,11 +38,11 @@
   <div class="meta-row"><span class="pill time">≈ 15 min</span></div>
   <p class="lede">Turn a variant-calling analysis into a pipeline anyone can re-run with one command – with Snakemake and with Galaxy – and find out what an AI agent can and cannot prove about its results.</p>
 
-  <div class="callout lecture">
+  <div class="callout concept">
   <div class="co-t">Claerbout’s principle</div>
-  <blockquote class="quote">“An article about computational result is advertising, not scholarship. The actual scholarship is the full software environment, code and data, that produced the result.”</blockquote>
-  <p class="small muted">The lecture’s summary of the idea of Claerbout &amp; Karrenbach (<i>Electronic documents give reproducible research a new meaning</i>, SEG Technical Program Expanded Abstracts, 1992, 601–604). Its best-known wording is Buckheit &amp; Donoho’s (1995): “An article about computational science in a scientific publication is not the scholarship itself, it is merely advertising of the scholarship. The actual scholarship is the complete software development environment and the complete set of instructions which generated the figures.”</p>
-  <p>Claerbout and Karrenbach also came up with four basic rules for reproducible research at the Stanford Exploration Project: every result could be <b>burned</b> (deleted), <b>built</b> again, <b>viewed</b>, and its folder <b>cleaned</b> of intermediate files – each with one command. By the end of this practical your own analysis will pass the same test.</p>
+  <blockquote class="quote">“An article about computational science in a scientific publication is not the scholarship itself, it is merely advertising of the scholarship. The actual scholarship is the complete software development environment and the complete set of instructions which generated the figures.”</blockquote>
+  <p class="small muted">J. B. Buckheit and D. L. Donoho (1995), <i>WaveLab and reproducible research</i>, summarising the principle of Jon Claerbout of the Stanford Exploration Project.</p>
+  <p>At the Stanford Exploration Project, Jon Claerbout and Martin Karrenbach set four basic rules for reproducible research: every result can be <b>burned</b> (deleted), <b>built</b> again, <b>viewed</b>, and its folder <b>cleaned</b> of intermediate files – each with one command. By the end of this practical your own analysis will pass the same test.</p>
 </div>
 
   <p>In the reads-to-variants practical you turned sequencing reads into variant calls, typing one command at a time. Could someone else – or you, in six months – get <i>exactly</i> the same calls again? Only if they know <b>which data</b> you used, <b>every command and option</b>, in <b>which order</b>, with <b>which settings</b>, and with <b>which versions</b> of the programs. A pipeline writes all of that down in a form a computer can run.</p>
@@ -92,7 +92,7 @@
 </div>
   <div class="q" data-q="s-scholar" data-type="mcq">
   <div class="q-text">In Claerbout’s principle, a paper is only “advertising”. What is the “scholarship”?</div>
-  <div class="mcq"><label data-why="The figures are part of the advertising: they show the results but cannot regenerate them."><input type="radio"> the figures and tables in the paper</label><label data-correct data-why="Only these let someone regenerate – and check – every result."><input type="radio"> the full software environment, code and data that produced the results</label><label data-why="A methods section describes the analysis in words; it cannot be run, and it is rarely complete."><input type="radio"> the methods section of the paper</label><label data-why="Reviewers usually see only the advertising, too."><input type="radio"> the peer reviews</label></div>
+  <div class="mcq"><label data-why="The figures are part of the advertising: they show the results but cannot regenerate them."><input type="radio"> the figures and tables in the paper</label><label data-correct data-why="Only these let someone regenerate – and check – every result. (Today we would add: and the data they were run on.)"><input type="radio"> the complete software environment and the complete set of instructions that produced the results</label><label data-why="A methods section describes the analysis in words; it cannot be run, and it is rarely complete."><input type="radio"> the methods section of the paper</label><label data-why="Reviewers usually see only the advertising, too."><input type="radio"> the peer reviews</label></div>
 </div>
 
 </section>
@@ -262,7 +262,7 @@ echo &quot;All steps finished.&quot;</pre></div>
 </div>
   <div class="q" data-q="h-rerun">
   <div class="q-text">The second run redid every step. Why is that a problem for a real project – say 100 samples, when one new sample arrives, or when only the filter threshold changes?</div>
-  <div class="q-model"><p>A script has no idea what is already done: it cannot tell that the BAM files are up to date, so it repeats hours of mapping to change one threshold or add one sample. It lacks the two features the lecture named: <b>dependencies</b> (which file is made from which) and <b>re-entrancy</b> (continuing from where it stopped, redoing only what is needed). You could add checks by hand (“if the file exists, skip”) – but then an outdated file would never be updated.</p></div>
+  <div class="q-model"><p>A script has no idea what is already done: it cannot tell that the BAM files are up to date, so it repeats hours of mapping to change one threshold or add one sample. It lacks two things a workflow engine provides: <b>dependencies</b> (which file is made from which) and <b>re-entrancy</b> (continuing from where it stopped, redoing only what is needed). You could add checks by hand (“if the file exists, skip”) – but then an outdated file would never be updated.</p></div>
 </div>
 
   <h2 id="h-fail">2.3 When a step fails</h2>
@@ -444,7 +444,7 @@ for sample in config[&quot;samples&quot;]:
     <li data-task="y-pyrun" data-auto="py:script ok=true argv~hello.py">In the <b>Terminal</b>, in your project folder: <code>python workflow/scripts/hello.py</code> <button class="do showme" type="button" data-term="python workflow/scripts/hello.py">show me</button></li>
   </ol>
 </div>
-  <div class="callout lecture">
+  <div class="callout concept">
   <div class="co-t">Claerbout on interactive programs</div>
   <p>“Interactive programs should always be able to save their state so they can restart. Otherwise, dependence on an interactive program can be a form of slavery (nonreproducible research).” – Jon Claerbout, <a href="https://sepwww.stanford.edu/sep/jon/reproducible.html" target="_blank" rel="noopener">Reproducible computational research</a></p>
 </div>
@@ -457,8 +457,8 @@ for sample in config[&quot;samples&quot;]:
   <div class="meta-row"><span class="pill time">≈ 45 min</span></div>
   <p class="lede">Describe each step as a rule – what it needs, what it makes and the command in between – and let Snakemake work out the order, run only what is needed, and keep a record.</p>
 
-  <div class="callout lecture">
-  <div class="co-t">A rule, as in the lecture</div>
+  <div class="callout concept">
+  <div class="co-t">A rule</div>
   <p>A Snakefile is a set of <b>rules</b>. Each rule says how to make its <code>output</code> files from its <code>input</code> files – with a <code>shell</code> command, a Python <code>script</code> or a <code>run</code> block – and refers to its files as <code>{input}</code> and <code>{output}</code> in the command. Snakemake starts from the files you ask for (by default those of the <b>first</b> rule: its outputs – or, for a target rule such as <code>all</code>, its inputs), finds the rules that make them, then the rules that make <i>their</i> inputs, and so on – building a <b>DAG</b> (directed acyclic graph) of jobs.</p>
 </div>
 
@@ -561,7 +561,7 @@ for sample in config[&quot;samples&quot;]:
 </div>
   <div class="q" data-q="k-notrun">
   <div class="q-text">Look at the job list of the last run. Which of your rules did <b>not</b> run, and why not?</div>
-  <div class="q-model"><p><b>index_bam</b> did not run. No rule needs its output: <code>rule all</code> does not ask for the <code>.bai</code> file, and <code>call_variants</code> does not list it as an input (bcftools reads the whole BAM file without the index). Snakemake runs only the jobs needed for the files you ask for – the lecture’s rule: a job is executed if its output is a target, or is needed by another job, and is missing or out of date.</p></div>
+  <div class="q-model"><p><b>index_bam</b> did not run. No rule needs its output: <code>rule all</code> does not ask for the <code>.bai</code> file, and <code>call_variants</code> does not list it as an input (bcftools reads the whole BAM file without the index). Snakemake runs only the jobs needed for the files you ask for: a job runs if its output is a target or is needed by another job – and only if that output is missing or out of date.</p></div>
 </div>
   <p class="small">If something does not work, compare your Snakefile with this reference version (it is what you should have now):</p>
   <div class="codefile" data-path="workflow/Snakefile"><div class="cf-head"><span class="cf-name">workflow/Snakefile</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/Snakefile">Replace my Snakefile with this</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># Variant calling for NA12878 – first version (one sample, names written out)
@@ -627,7 +627,7 @@ rule filter_variants:
     <li data-task="k-dagopen" data-auto="editor:view name=dag.svg">Open the picture: <code>open dag.svg</code> <button class="do showme" type="button" data-term="open dag.svg">show me</button></li>
   </ol>
 </div>
-  <p class="small muted">In the lecture the command was <code>snakemake --dag | dot -Tpdf &gt; dag.pdf</code>. This browser’s Graphviz makes SVG and PNG pictures but not PDF. <code>snakemake --rulegraph</code> draws one box per rule instead of per job – simpler when there are many samples. <button class="do ai" type="button" data-ai="smk:dag">Ask the assistant about the DAG</button></p>
+  <p class="small muted">On your own computer, <code>snakemake --dag | dot -Tpdf &gt; dag.pdf</code> makes a PDF; this browser’s Graphviz makes SVG and PNG pictures, but not PDF. <code>snakemake --rulegraph</code> draws one box per rule instead of per job – simpler when there are many samples. <button class="do ai" type="button" data-ai="smk:dag">Ask the assistant about the DAG</button></p>
 
   <h2 id="k-reentry">4.6 Re-entrancy and provenance</h2>
   <p>Now test the promises of a workflow engine. Run each dry run and read the <b>reason</b> Snakemake gives for each job.</p>
@@ -643,7 +643,7 @@ rule filter_variants:
 </div>
   <div class="q" data-q="k-reasons">
   <div class="q-text">What reasons did Snakemake give (a) after you deleted the flagstat file and (b) after you changed the threshold? Why did changing it back need no re-run?</div>
-  <div class="q-model"><p>(a) <b>Missing output files</b>: only <code>flagstat</code> (and <code>all</code>) had to run – not the mapping or calling. (b) <b>Code has changed since last execution</b> for <code>filter_variants</code>: Snakemake stores the code each output was made with (in <code>.snakemake/metadata</code>) and notices that the rule is no longer the same – <i>provenance information</i>, beyond the file times of the lecture’s rule list. After changing it back, the code matched the record of the last run again, so the existing file was still valid.</p></div>
+  <div class="q-model"><p>(a) <b>Missing output files</b>: only <code>flagstat</code> (and <code>all</code>) had to run – not the mapping or calling. (b) <b>Code has changed since last execution</b> for <code>filter_variants</code>: Snakemake stores the code each output was made with (in <code>.snakemake/metadata</code>) and notices that the rule is no longer the same – <i>provenance information</i>, beyond comparing the times of the files. After changing it back, the code matched the record of the last run again, so the existing file was still valid.</p></div>
 </div>
   <div class="q" data-q="k-failq">
   <div class="q-text">Compare what Snakemake did when the flagstat step failed with what your bash script did in chapter 2.</div>
@@ -709,7 +709,7 @@ rule all:
 </div>
 
   <h2 id="g-named">5.3 Named inputs and logs</h2>
-  <p>With several inputs, <b>names</b> are clearer than positions (the lecture: <i>give them a name – refer by name</i>): <code>ref=…</code> in <code>input:</code>, <code>{input.ref}</code> in the command. A <code>log:</code> file keeps each program’s messages. Replace your <code>map_reads</code> with this version – it also takes the reference from the config file:</p>
+  <p>With several inputs, <b>names</b> are clearer than positions: <code>ref=…</code> in <code>input:</code>, <code>{input.ref}</code> in the command. A <code>log:</code> file keeps each program’s messages. Replace your <code>map_reads</code> with this version – it also takes the reference from the config file:</p>
   <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule map_reads:
     input:
         ref=REF,
@@ -944,10 +944,10 @@ rule summarise:
   <div class="meta-row"><span class="pill time">≈ 40 min</span></div>
   <p class="lede">Same data, same Snakefile, same settings – different results. Find out why, pin the software, and record the environment.</p>
 
-  <p>Same data, same Snakefile, same settings – different results? It happens when the <b>software</b> differs. The last part of Claerbout’s scholarship is “the full software environment”.</p>
+  <p>Same data, same Snakefile, same settings – different results? It happens when the <b>software</b> differs. In Claerbout’s principle, the scholarship includes “the complete software development environment”.</p>
 
   <h2 id="e-what">6.1 Which software are you using?</h2>
-  <p>This practical uses <b>conda</b> (the package manager from the lecture, here Miniforge with the conda-forge and bioconda channels). An <b>environment</b> is a folder of programs with particular versions; the active one decides which program a command runs.</p>
+  <p>This practical uses the package manager <b>conda</b> – here Miniforge, with the conda-forge and bioconda channels. An <b>environment</b> is a folder of programs with particular versions; the active one decides which program a command runs.</p>
   <div class="activity">
   <div class="act-t">Activity 6.1 · Look at your environment</div>
   <ol class="steps">
@@ -1192,9 +1192,9 @@ rule summarise:
   <div class="meta-row"><span class="pill time">≈ 40 min</span></div>
   <p class="lede">Galaxy runs pipelines without programming: tools in forms, a history of every dataset, and workflows you build by drawing connections. Build yours – and compare the result with Snakemake’s.</p>
 
-  <div class="callout lecture">
+  <div class="callout concept">
   <div class="co-t">A graphical workflow engine</div>
-  <p>Galaxy (usegalaxy.org, usegalaxy.eu and many institutional servers) runs bioinformatics tools through web forms, keeps every dataset in a <b>history</b> with a full record of how it was made, and lets you build <b>workflows</b> by connecting tools on a canvas. It was started in 2005 at Penn State by James Taylor and Anton Nekrutenko. In James Taylor’s words, quoted in the lecture: <i>“Good ideas don’t have owners – they belong to everyone.”</i></p>
+  <p>Galaxy (usegalaxy.org, usegalaxy.eu and many institutional servers) runs bioinformatics tools through web forms, keeps every dataset in a <b>history</b> with a full record of how it was made, and lets you build <b>workflows</b> by connecting tools on a canvas. James Taylor and Anton Nekrutenko began Galaxy at Penn State; it was first described in 2005. In James Taylor’s words: <i>“Good ideas don’t have owners – they belong to everyone.”</i></p>
   <p class="small muted">The Galaxy tab is a practice server that works like Galaxy and runs the same WebAssembly programs as your terminal and your Snakefile.</p>
 </div>
 
@@ -1529,6 +1529,7 @@ The variant records of a correct run have this checksum (on a Mac: md5 instead o
     <li>Sandve GK, Nekrutenko A, Taylor J, Hovig E. Ten simple rules for reproducible computational research. <i>PLoS Comput Biol</i> 2013; 9(10):e1003285.</li>
     <li>Noble WS. A quick guide to organizing computational biology projects. <i>PLoS Comput Biol</i> 2009; 5(7):e1000424.</li>
     <li>Claerbout J. <a href="https://sepwww.stanford.edu/sep/jon/reproducible.html" target="_blank" rel="noopener">Reproducible computational research</a> (Stanford Exploration Project).</li>
+    <li>Claerbout J, Karrenbach M. Electronic documents give reproducible research a new meaning. <i>SEG Technical Program Expanded Abstracts</i> 1992. <a href="https://doi.org/10.1190/1.1822162" target="_blank" rel="noopener">doi:10.1190/1.1822162</a></li>
     <li>Buckheit JB, Donoho DL. WaveLab and reproducible research. In: Antoniadis A, Oppenheim G (eds) <i>Wavelets and Statistics</i>. Lecture Notes in Statistics 103. Springer, 1995: 55–81.</li>
     <li><a href="https://snakemake.readthedocs.io/" target="_blank" rel="noopener">Snakemake documentation</a> · <a href="https://training.galaxyproject.org/" target="_blank" rel="noopener">Galaxy Training Network</a></li>
   </ul>

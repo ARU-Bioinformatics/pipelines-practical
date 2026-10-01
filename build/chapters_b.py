@@ -5,7 +5,7 @@ SF = 'workflow/Snakefile'
 
 def ch_snakefile():
     body = f'''
-  {callout('lecture', 'A rule, as in the lecture', """<p>A Snakefile is a set of <b>rules</b>. Each rule says how to make its <code>output</code> files from its <code>input</code> files – with a <code>shell</code> command, a Python <code>script</code> or a <code>run</code> block – and refers to its files as <code>{input}</code> and <code>{output}</code> in the command. Snakemake starts from the files you ask for (by default those of the <b>first</b> rule: its outputs – or, for a target rule such as <code>all</code>, its inputs), finds the rules that make them, then the rules that make <i>their</i> inputs, and so on – building a <b>DAG</b> (directed acyclic graph) of jobs.</p>""")}
+  {callout('concept', 'A rule', """<p>A Snakefile is a set of <b>rules</b>. Each rule says how to make its <code>output</code> files from its <code>input</code> files – with a <code>shell</code> command, a Python <code>script</code> or a <code>run</code> block – and refers to its files as <code>{input}</code> and <code>{output}</code> in the command. Snakemake starts from the files you ask for (by default those of the <b>first</b> rule: its outputs – or, for a target rule such as <code>all</code>, its inputs), finds the rules that make them, then the rules that make <i>their</i> inputs, and so on – building a <b>DAG</b> (directed acyclic graph) of jobs.</p>""")}
 
   <h2 id="k-first">4.1 The first rule</h2>
   {codefile(SF, SMK_MAP, note='The <code>\\\\t</code> inside the Python string becomes <code>\\t</code> in the command, which minimap2 turns into a tab.')}
@@ -62,7 +62,7 @@ def ch_snakefile():
       task('k-md5', f'Is the result the same as by hand? {cmd("bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum")}', auto='term:command line~md5sum code=0 line~filtered'),
   ])}
   {q('k-notrun', 'Look at the job list of the last run. Which of your rules did <b>not</b> run, and why not?',
-     """<p><b>index_bam</b> did not run. No rule needs its output: <code>rule all</code> does not ask for the <code>.bai</code> file, and <code>call_variants</code> does not list it as an input (bcftools reads the whole BAM file without the index). Snakemake runs only the jobs needed for the files you ask for – the lecture’s rule: a job is executed if its output is a target, or is needed by another job, and is missing or out of date.</p>""")}
+     """<p><b>index_bam</b> did not run. No rule needs its output: <code>rule all</code> does not ask for the <code>.bai</code> file, and <code>call_variants</code> does not list it as an input (bcftools reads the whole BAM file without the index). Snakemake runs only the jobs needed for the files you ask for: a job runs if its output is a target or is needed by another job – and only if that output is missing or out of date.</p>""")}
   <p class="small">If something does not work, compare your Snakefile with this reference version (it is what you should have now):</p>
   {codefile(SF, SNAKEFILE_B, button='Replace my Snakefile with this')}
 
@@ -71,7 +71,7 @@ def ch_snakefile():
       task('k-dagrun', f'Snakemake describes its DAG in the <code>dot</code> language; the Graphviz program <code>dot</code> draws it: {cmd("snakemake --dag | dot -Tsvg > dag.svg")}', auto='dot:render format=svg'),
       task('k-dagopen', f'Open the picture: {cmd("open dag.svg")}', auto='editor:view name=dag.svg'),
   ])}
-  <p class="small muted">In the lecture the command was <code>snakemake --dag | dot -Tpdf &gt; dag.pdf</code>. This browser’s Graphviz makes SVG and PNG pictures but not PDF. <code>snakemake --rulegraph</code> draws one box per rule instead of per job – simpler when there are many samples. {ai('smk:dag', 'Ask the assistant about the DAG')}</p>
+  <p class="small muted">On your own computer, <code>snakemake --dag | dot -Tpdf &gt; dag.pdf</code> makes a PDF; this browser’s Graphviz makes SVG and PNG pictures, but not PDF. <code>snakemake --rulegraph</code> draws one box per rule instead of per job – simpler when there are many samples. {ai('smk:dag', 'Ask the assistant about the DAG')}</p>
 
   <h2 id="k-reentry">4.6 Re-entrancy and provenance</h2>
   <p>Now test the promises of a workflow engine. Run each dry run and read the <b>reason</b> Snakemake gives for each job.</p>
@@ -83,7 +83,7 @@ def ch_snakefile():
       task('k-gone', f'Is there a half-made flagstat file left? {cmd("ls -l results/qc")} Then fix the typo, save, and run {cmd("snakemake --cores 1")}.', auto='term:command line~ls -l results/qc'),
   ])}
   {q('k-reasons', 'What reasons did Snakemake give (a) after you deleted the flagstat file and (b) after you changed the threshold? Why did changing it back need no re-run?',
-     """<p>(a) <b>Missing output files</b>: only <code>flagstat</code> (and <code>all</code>) had to run – not the mapping or calling. (b) <b>Code has changed since last execution</b> for <code>filter_variants</code>: Snakemake stores the code each output was made with (in <code>.snakemake/metadata</code>) and notices that the rule is no longer the same – <i>provenance information</i>, beyond the file times of the lecture’s rule list. After changing it back, the code matched the record of the last run again, so the existing file was still valid.</p>""")}
+     """<p>(a) <b>Missing output files</b>: only <code>flagstat</code> (and <code>all</code>) had to run – not the mapping or calling. (b) <b>Code has changed since last execution</b> for <code>filter_variants</code>: Snakemake stores the code each output was made with (in <code>.snakemake/metadata</code>) and notices that the rule is no longer the same – <i>provenance information</i>, beyond comparing the times of the files. After changing it back, the code matched the record of the last run again, so the existing file was still valid.</p>""")}
   {q('k-failq', 'Compare what Snakemake did when the flagstat step failed with what your bash script did in chapter 2.',
      """<p>Snakemake stopped at the failing job with a clear <b>Error in rule flagstat</b> block (and the program’s own error message), exited with a non-zero status, and <b>removed the output</b> of the failed job – the shell had already created an empty flagstat file with <code>&gt;</code> – so no half-made file could be mistaken for a result. The bash script without strict mode carried on, reported success and left wrong (empty) results behind.</p>""")}
 '''
@@ -117,7 +117,7 @@ def ch_generalise():
      """<p>A <b>MissingInputException</b> for rule <code>map_reads</code>: to make <code>results/mapped/NA12891.sorted.bam</code> it needs <code>data/raw/NA12891_R1.fastq</code> and <code>data/raw/NA12891_R2.fastq</code>, which do not exist. With the two read files in <code>data/raw/</code>, one command would analyse the new sample – and leave NA12878’s results untouched, because they are up to date.</p>""")}
 
   <h2 id="g-named">5.3 Named inputs and logs</h2>
-  <p>With several inputs, <b>names</b> are clearer than positions (the lecture: <i>give them a name – refer by name</i>): <code>ref=…</code> in <code>input:</code>, <code>{{input.ref}}</code> in the command. A <code>log:</code> file keeps each program’s messages. Replace your <code>map_reads</code> with this version – it also takes the reference from the config file:</p>
+  <p>With several inputs, <b>names</b> are clearer than positions: <code>ref=…</code> in <code>input:</code>, <code>{{input.ref}}</code> in the command. A <code>log:</code> file keeps each program’s messages. Replace your <code>map_reads</code> with this version – it also takes the reference from the config file:</p>
   {snippet(MAP_NAMED)}
   <table class="table small">
     <tr><td><code>ref=REF</code></td><td>a <b>named</b> input, used as <code>{{input.ref}}</code> in the command. <code>REF</code> is the Python variable set from the config file at the top of the Snakefile.</td></tr>
@@ -182,10 +182,10 @@ def ch_generalise():
 
 def ch_envs():
     body = f'''
-  <p>Same data, same Snakefile, same settings – different results? It happens when the <b>software</b> differs. The last part of Claerbout’s scholarship is “the full software environment”.</p>
+  <p>Same data, same Snakefile, same settings – different results? It happens when the <b>software</b> differs. In Claerbout’s principle, the scholarship includes “the complete software development environment”.</p>
 
   <h2 id="e-what">6.1 Which software are you using?</h2>
-  <p>This practical uses <b>conda</b> (the package manager from the lecture, here Miniforge with the conda-forge and bioconda channels). An <b>environment</b> is a folder of programs with particular versions; the active one decides which program a command runs.</p>
+  <p>This practical uses the package manager <b>conda</b> – here Miniforge, with the conda-forge and bioconda channels. An <b>environment</b> is a folder of programs with particular versions; the active one decides which program a command runs.</p>
   {activity('Activity 6.1 · Look at your environment', [
       task('e-list', f'{cmd("conda env list")} – the <code>*</code> marks the active environment (also shown in the prompt).', auto='term:command line~conda env list code=0'),
       task('e-pkgs', f'{cmd("conda list")} – every package in it, with version, build and channel.', auto='term:command line~conda list code=0'),

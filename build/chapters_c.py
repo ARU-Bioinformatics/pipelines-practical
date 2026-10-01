@@ -4,7 +4,7 @@ from chapters_lib import *
 
 def ch_galaxy():
     body = f'''
-  {callout('lecture', 'A graphical workflow engine', """<p>Galaxy (usegalaxy.org, usegalaxy.eu and many institutional servers) runs bioinformatics tools through web forms, keeps every dataset in a <b>history</b> with a full record of how it was made, and lets you build <b>workflows</b> by connecting tools on a canvas. It was started in 2005 at Penn State by James Taylor and Anton Nekrutenko. In James Taylor’s words, quoted in the lecture: <i>“Good ideas don’t have owners – they belong to everyone.”</i></p>
+  {callout('concept', 'A graphical workflow engine', """<p>Galaxy (usegalaxy.org, usegalaxy.eu and many institutional servers) runs bioinformatics tools through web forms, keeps every dataset in a <b>history</b> with a full record of how it was made, and lets you build <b>workflows</b> by connecting tools on a canvas. James Taylor and Anton Nekrutenko began Galaxy at Penn State; it was first described in 2005. In James Taylor’s words: <i>“Good ideas don’t have owners – they belong to everyone.”</i></p>
   <p class="small muted">The Galaxy tab is a practice server that works like Galaxy and runs the same WebAssembly programs as your terminal and your Snakefile.</p>""")}
 
   <h2 id="x-data">7.1 Data into a history</h2>
@@ -261,6 +261,7 @@ def ch_ref():
     <li>Sandve GK, Nekrutenko A, Taylor J, Hovig E. Ten simple rules for reproducible computational research. <i>PLoS Comput Biol</i> 2013; 9(10):e1003285.</li>
     <li>Noble WS. A quick guide to organizing computational biology projects. <i>PLoS Comput Biol</i> 2009; 5(7):e1000424.</li>
     <li>Claerbout J. <a href="https://sepwww.stanford.edu/sep/jon/reproducible.html" target="_blank" rel="noopener">Reproducible computational research</a> (Stanford Exploration Project).</li>
+    <li>Claerbout J, Karrenbach M. Electronic documents give reproducible research a new meaning. <i>SEG Technical Program Expanded Abstracts</i> 1992. <a href="https://doi.org/10.1190/1.1822162" target="_blank" rel="noopener">doi:10.1190/1.1822162</a></li>
     <li>Buckheit JB, Donoho DL. WaveLab and reproducible research. In: Antoniadis A, Oppenheim G (eds) <i>Wavelets and Statistics</i>. Lecture Notes in Statistics 103. Springer, 1995: 55–81.</li>
     <li><a href="https://snakemake.readthedocs.io/" target="_blank" rel="noopener">Snakemake documentation</a> · <a href="https://training.galaxyproject.org/" target="_blank" rel="noopener">Galaxy Training Network</a></li>
   </ul>

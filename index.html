@@ -1,0 +1,1593 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipelines and reproducibility – from commands to Snakemake and Galaxy</title>
+<meta name="description" content="A browser-based practical: turn a variant-calling analysis into a reproducible pipeline with Snakemake, build the same workflow in Galaxy, and ask what an AI agent can prove.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f3a2e'/%3E%3Cpath d='M8 9h7v5H8zM17 18h7v5h-7zM11.5 14v6.5H17' fill='none' stroke='%239be58a' stroke-width='2.2' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/vendor/codemirror/codemirror.css">
+<link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/genomics.css">
+<link rel="stylesheet" href="assets/css/nb-ai.css">
+<link rel="stylesheet" href="assets/css/pipe.css">
+</head>
+<body data-page="pipelines" data-title="Pipelines and reproducibility">
+<div class="app">
+
+  <header class="topbar">
+    <a class="brand" href="#start" title="Start">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#1f3a2e"/><path d="M8 9h7v5H8zM17 18h7v5h-7zM11.5 14v6.5H17" fill="none" stroke="#9be58a" stroke-width="2.2" stroke-linejoin="round"/></svg>
+      <div>
+        <div class="brand-title">Pipelines and reproducibility</div>
+        <div class="brand-sub">From commands to Snakemake and Galaxy</div>
+      </div>
+    </a>
+    <div class="spacer"></div>
+    <div class="progress-wrap" title="Activities done and questions answered (saved in this browser)"><span class="progress-label">0% done</span><div class="progress"><i></i></div></div>
+    <button class="btn" id="answersBtn" type="button"><svg class="ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg><span>My answers</span></button>
+    <button class="btn" id="helpBtn" type="button" title="How this page works"><svg class="ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M9.2 9a2.9 2.9 0 0 1 5.6 1c0 2-2.8 2.6-2.8 4M12 17.5h.01"/></svg><span>Help</span></button>
+  </header>
+
+  <div class="main">
+    <aside class="tut" aria-label="Instructions">
+      <nav class="ch-nav" aria-label="Chapters"></nav>
+<!--CHAPTERS-->
+<section class="chapter" id="start" data-num="0" data-title="Start here" data-bench="terminal">
+  <h1>Pipelines and reproducibility</h1>
+  <div class="meta-row"><span class="pill time">≈ 15 min</span></div>
+  <p class="lede">Turn a variant-calling analysis into a pipeline anyone can re-run with one command – with Snakemake and with Galaxy – and find out what an AI agent can and cannot prove about its results.</p>
+
+  <div class="callout lecture">
+  <div class="co-t">Claerbout’s principle</div>
+  <blockquote class="quote">“An article about computational result is advertising, not scholarship. The actual scholarship is the full software environment, code and data, that produced the result.”</blockquote>
+  <p class="small muted">The lecture’s summary of the idea of Claerbout &amp; Karrenbach (<i>Electronic documents give reproducible research a new meaning</i>, SEG Technical Program Expanded Abstracts, 1992, 601–604). Its best-known wording is Buckheit &amp; Donoho’s (1995): “An article about computational science in a scientific publication is not the scholarship itself, it is merely advertising of the scholarship. The actual scholarship is the complete software development environment and the complete set of instructions which generated the figures.”</p>
+  <p>Claerbout and Karrenbach also came up with four basic rules for reproducible research at the Stanford Exploration Project: every result could be <b>burned</b> (deleted), <b>built</b> again, <b>viewed</b>, and its folder <b>cleaned</b> of intermediate files – each with one command. By the end of this practical your own analysis will pass the same test.</p>
+</div>
+
+  <p>In the reads-to-variants practical you turned sequencing reads into variant calls, typing one command at a time. Could someone else – or you, in six months – get <i>exactly</i> the same calls again? Only if they know <b>which data</b> you used, <b>every command and option</b>, in <b>which order</b>, with <b>which settings</b>, and with <b>which versions</b> of the programs. A pipeline writes all of that down in a form a computer can run.</p>
+
+  <h2 id="s-route">0.1 The route</h2>
+  <table class="table small route">
+    <tr><th>Chapter</th><th>You will…</th></tr>
+    <tr><td>1 · A project folder</td><td>set up a project the data-science way: raw data read-only and checksummed, a README</td></tr>
+    <tr><td>2 · By hand, then a script</td><td>run the analysis by hand, then as a bash script – and see what a script cannot do</td></tr>
+    <tr><td>3 · Python for Snakemake</td><td>learn the Python you need to read and write a Snakefile, in the notebook and as a script</td></tr>
+    <tr><td>4 · Your first Snakefile</td><td>write the pipeline as Snakemake rules, with help (and mistakes) from an AI assistant</td></tr>
+    <tr><td>5 · Any sample, any setting</td><td>wildcards, a config file, parameters, logs and a Python script in the pipeline</td></tr>
+    <tr><td>6 · Software environments</td><td>find out why the same pipeline can give different numbers on another computer, and pin the software</td></tr>
+    <tr><td>7 · The same pipeline in Galaxy</td><td>build the workflow graphically in Galaxy – and get the identical result</td></tr>
+    <tr><td>8 · An AI agent</td><td>let an AI agent “do the analysis” and ask what it can prove</td></tr>
+    <tr><td>9 · Which is best?</td><td>burn and rebuild your results, compare the four approaches, and export your project</td></tr>
+  </table>
+
+  <div class="callout info">
+  <div class="co-t">The data</div>
+  <p>The same sample and genes as in the reads-to-variants practical, made small enough for every step to run in seconds in your browser:</p>
+  <ul>
+    <li><b>Reads:</b> 3,519 pairs of real 76-base Illumina exome reads from <b>NA12878</b> (1000 Genomes run SRR098401) that map around <i>CYP2C19</i> and <i>CYP2C9</i>, two genes that metabolise many drugs.</li>
+    <li><b>Reference:</b> two 26–30 kb slices of the human genome (hg19), each covering part of one gene – including the sites of <i>CYP2C19*2</i> and <i>CYP2C9*2</i>.</li>
+    <li><b>Programs:</b> minimap2 2.22, samtools 1.17 and bcftools 1.10 – the real programs, compiled to WebAssembly and running in your browser. (minimap2 replaces BWA, which is not available in a browser.)</li>
+  </ul>
+  <p class="small muted">NA12878 is a public reference sample whose donor consented to open data sharing. Nothing in this practical is a clinical result.</p>
+</div>
+
+  <h2 id="s-bench">0.2 The workbench</h2>
+  <div class="activity">
+  <div class="act-t">Activity 0.2 · Look around</div>
+  <ol class="steps">
+    <li data-task="s-term" data-auto="term:command line~/data/course code=0">The <b>Terminal</b> is a Linux-like shell. List the course data: <code>ls -l /data/course</code> <button class="do showme" type="button" data-term="ls -l /data/course">show me</button></li>
+    <li data-task="s-readme" data-auto="term:command line~README.md code=0">Read what the data is: <code>cat /data/course/README.md</code> <button class="do showme" type="button" data-term="cat /data/course/README.md">show me</button></li>
+    <li data-task="s-files" data-auto="app:bench name=editor">The <b>Files</b> tab shows your folders and has an editor for Snakefiles, scripts and config files. <button class="do showme" type="button" data-bench="editor">open Files</button></li>
+    <li data-task="s-nb" data-auto="app:bench name=notebook">The <b>Notebook</b> runs Python in your browser (the first time, it takes 10–30 seconds to start). <button class="do showme" type="button" data-bench="notebook">open Notebook</button></li>
+    <li data-task="s-gx" data-auto="app:bench name=galaxy"><b>Galaxy</b> is a practice Galaxy server running in the page (chapter 7). <button class="do showme" type="button" data-bench="galaxy">open Galaxy</button></li>
+    <li data-task="s-ai" data-auto="app:bench name=assistant">The <b>AI assistant</b> has a Chat tab (a coding assistant) and an Agent tab (chapter 8). Its prepared answers contain <b>mistakes on purpose</b> – spotting them is part of the practical. <button class="do showme" type="button" data-bench="assistant">open the assistant</button></li>
+  </ol>
+</div>
+  <p class="small muted">The practical takes about 5½ hours – for example chapters 0–5 in one session and 6–9 in another; stop whenever you like and carry on later. Your own files (Snakefile, config, scripts …), conda environments, Galaxy workflows, the notebook, ticks and answers are saved in this browser – use the same browser next time. To continue on another computer (lab computers may clear the browser when you log out), use <b>My answers → Save all my work to a file</b> before you leave, and <b>Open my work from a file</b> on the next computer. Results are <i>not</i> saved: rebuilding them is one command, which is rather the point. <b>My answers</b> also downloads your answers; the last chapter shows how to download your whole project.</p>
+
+  <div class="q" data-q="s-need">
+  <div class="q-text">Think back to the reads-to-variants practical. If a colleague wanted to regenerate your filtered VCF file <i>exactly</i>, what would they need from you? List as many things as you can.</div>
+  <div class="q-model"><p>At least: the <b>raw data</b> – the exact read files and the exact reference genome (version and any changes) – ideally with checksums; <b>every command</b>, in order, with all its options; the <b>parameters</b> (e.g. the filter thresholds); the <b>program versions</b> (and the libraries they were built with); the <b>computing environment</b> (operating system, how the software was installed); anything done <b>by hand</b> (renamed files, a step repeated after an error, a file edited in a text editor). A shell history or lab-book notes rarely record all of this – that is what this practical fixes.</p></div>
+</div>
+  <div class="q" data-q="s-scholar" data-type="mcq">
+  <div class="q-text">In Claerbout’s principle, a paper is only “advertising”. What is the “scholarship”?</div>
+  <div class="mcq"><label data-why="The figures are part of the advertising: they show the results but cannot regenerate them."><input type="radio"> the figures and tables in the paper</label><label data-correct data-why="Only these let someone regenerate – and check – every result."><input type="radio"> the full software environment, code and data that produced the results</label><label data-why="A methods section describes the analysis in words; it cannot be run, and it is rarely complete."><input type="radio"> the methods section of the paper</label><label data-why="Reviewers usually see only the advertising, too."><input type="radio"> the peer reviews</label></div>
+</div>
+
+</section>
+
+<section class="chapter" id="project" data-num="1" data-title="A project folder" data-bench="terminal" hidden>
+  <h1>A project folder</h1>
+  <div class="meta-row"><span class="pill time">≈ 20 min</span></div>
+  <p class="lede">Reproducibility starts before the first command: with a folder in which data, code, settings and results each have their place – and raw data that cannot change unnoticed.</p>
+
+  <p>Before the first command, decide where everything goes. A good layout keeps apart what you were <b>given</b> (data), what you <b>write</b> (code and settings) and what the computer <b>makes</b> (results) – so that anyone can see at a glance what can be regenerated and what cannot.</p>
+
+  <h2 id="p-folders">1.1 Make the folders</h2>
+  <div class="activity">
+  <div class="act-t">Activity 1.1 · A project skeleton</div>
+  <ol class="steps">
+    <li data-task="p-home" data-auto="term:command line~cd code=0">Make sure you are in your home folder: <code>cd ~</code> <button class="do showme" type="button" data-term="cd ~">show me</button></li>
+    <li data-task="p-mkdir" data-check="exists:workflow/scripts">Make the folders in one go: <code>mkdir -p cyp2c19-pipeline/{config,data/raw,logs,results,workflow/{envs,scripts}}</code> <button class="do showme" type="button" data-term="mkdir -p cyp2c19-pipeline/{config,data/raw,logs,results,workflow/{envs,scripts}}">show me</button><br><span class="small muted">The braces are <b>brace expansion</b>: the shell turns <code>{a,b}</code> into two words, so one command makes the project folder and all eight folders inside it.</span></li>
+    <li data-task="p-tree" data-auto="term:command line~tree code=0">Go into the project and look at it: <code>cd cyp2c19-pipeline &amp;&amp; tree</code> <button class="do showme" type="button" data-term="cd cyp2c19-pipeline &amp;&amp; tree">show me</button></li>
+  </ol>
+</div>
+  <table class="table small">
+    <tr><th>Folder</th><th>What goes in it</th><th>Can it be deleted and made again?</th></tr>
+    <tr><td><code>data/raw/</code></td><td>the input data, exactly as received</td><td><b>No</b> – protect it</td></tr>
+    <tr><td><code>config/</code></td><td>settings: sample names, file paths, thresholds</td><td>no – you write it</td></tr>
+    <tr><td><code>workflow/</code></td><td>the pipeline (<code>Snakefile</code>), software environments (<code>envs/</code>), scripts (<code>scripts/</code>)</td><td>no – you write it</td></tr>
+    <tr><td><code>results/</code>, <code>logs/</code></td><td>everything the pipeline makes</td><td><b>Yes</b> – so never edit anything in here by hand</td></tr>
+  </table>
+  <p class="small muted">This is close to the layout the Snakemake documentation recommends, and to W. S. Noble’s classic guide, <i>A quick guide to organizing computational biology projects</i> (PLoS Comput Biol 2009). <button class="do ai" type="button" data-ai="proj:layout">Ask the assistant about project layouts</button></p>
+
+  <h2 id="p-data">1.2 Bring in the data – and prove it is the same data</h2>
+  <div class="activity">
+  <div class="act-t">Activity 1.2 · Copy and checksum</div>
+  <ol class="steps">
+    <li data-task="p-cp1" data-check="exists:data/raw/NA12878_R2.fastq">Copy the reads, giving them names that say which sample they are: <code>cp /data/course/SRR098401_1.fastq data/raw/NA12878_R1.fastq &amp;&amp; cp /data/course/SRR098401_2.fastq data/raw/NA12878_R2.fastq</code> <button class="do showme" type="button" data-term="cp /data/course/SRR098401_1.fastq data/raw/NA12878_R1.fastq &amp;&amp; cp /data/course/SRR098401_2.fastq data/raw/NA12878_R2.fastq">show me</button></li>
+    <li data-task="p-cp2" data-check="exists:data/raw/reference.fa.fai">Copy the reference and its index: <code>cp /data/course/hg19_CYP2C_slices.fa data/raw/reference.fa &amp;&amp; cp /data/course/hg19_CYP2C_slices.fa.fai data/raw/reference.fa.fai</code> <button class="do showme" type="button" data-term="cp /data/course/hg19_CYP2C_slices.fa data/raw/reference.fa &amp;&amp; cp /data/course/hg19_CYP2C_slices.fa.fai data/raw/reference.fa.fai">show me</button></li>
+    <li data-task="p-md5" data-check="exists:data/raw/MD5SUMS">Record a <b>checksum</b> of each file: <code>md5sum data/raw/NA12878_R1.fastq data/raw/NA12878_R2.fastq data/raw/reference.fa &gt; data/raw/MD5SUMS</code> <button class="do showme" type="button" data-term="md5sum data/raw/NA12878_R1.fastq data/raw/NA12878_R2.fastq data/raw/reference.fa &gt; data/raw/MD5SUMS">show me</button></li>
+    <li data-task="p-cmp" data-auto="term:command line~MD5SUMS code=0 name=cat">Compare your checksums with the ones published with the course data: <code>cat data/raw/MD5SUMS /data/course/MD5SUMS</code> <button class="do showme" type="button" data-term="cat data/raw/MD5SUMS /data/course/MD5SUMS">show me</button></li>
+    <li data-task="p-check" data-auto="hash:check ok=true">Anyone can now check that their copies are identical to yours: <code>md5sum -c data/raw/MD5SUMS</code> <button class="do showme" type="button" data-term="md5sum -c data/raw/MD5SUMS">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="p-md5q" data-accept="d2b8|same|identical|match|content|equal" data-hint="compare the two long codes printed for the R1 files">
+  <div class="q-text">The reads now have new names. How do the checksums show that <code>data/raw/NA12878_R1.fastq</code> is still exactly the file <code>SRR098401_1.fastq</code>?</div>
+  <div class="q-model"><p>Both files have the same MD5 checksum, <code>d2b8ddb488975fa5ef18e6e59edb5681</code>. A checksum is calculated from the <b>contents</b> only – not the name or the date – and changing even one byte gives a completely different checksum. Same checksum = same data, whatever the file is called.</p></div>
+</div>
+
+  <h2 id="p-protect">1.3 Protect the raw data</h2>
+  <div class="activity">
+  <div class="act-t">Activity 1.3 · Read-only</div>
+  <ol class="steps">
+    <li data-task="p-ro" data-check="readonly:data/raw/NA12878_R1.fastq">Take away write permission from everyone (<code>a-w</code>): <code>chmod a-w data/raw/*</code> <button class="do showme" type="button" data-term="chmod a-w data/raw/*">show me</button></li>
+    <li data-task="p-ls" data-auto="term:command line~ls -l data/raw code=0">Look at the permissions: <code>ls -l data/raw</code> <button class="do showme" type="button" data-term="ls -l data/raw">show me</button> – <code>-r--r--r--</code> means readable, not writable. (Compare <code>ls -l /data/course</code>: those files belong to <code>root</code>, so you could never change them.)</li>
+    <li data-task="p-oops" data-auto="term:command line~oops code=1">Try an accident – writing over the reference: <code>echo oops &gt; data/raw/reference.fa</code> <button class="do showme" type="button" data-term="echo oops &gt; data/raw/reference.fa">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="p-why">
+  <div class="q-text">Why protect the raw data, but not the results?</div>
+  <div class="q-model"><p>Everything else is derived from the raw data: if it changes, every result and conclusion silently loses its foundation, and the data often cannot be obtained again. Results, on the other hand, are <b>disposable</b>: the pipeline can make them again at any time – so they are never edited by hand, and they need no protection. (Write protection prevents <i>accidents</i>; as the owner you could still change the permissions back.)</p></div>
+</div>
+
+  <h2 id="p-readme">1.4 Say what it is: a README</h2>
+  <p>The README is the first thing anyone (including you, later) reads. Start it now and complete it as the project grows.</p>
+  <div class="codefile" data-path="README.md"><div class="cf-head"><span class="cf-name">README.md</span><span class="grow"></span><button class="do" type="button" data-file-create="README.md">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># CYP2C19 / CYP2C9 variant calling for NA12878
+
+## What this project does
+Maps short exome reads of sample NA12878 to two slices of the human
+reference genome (hg19) that cover parts of the genes CYP2C19 and CYP2C9,
+calls the variants and summarises them.
+
+## Data (data/raw – read-only, never edited)
+| File | Where it came from |
+| --- | --- |
+| NA12878_R1.fastq | /data/course/SRR098401_1.fastq – run SRR098401, 1000 Genomes |
+| NA12878_R2.fastq | /data/course/SRR098401_2.fastq |
+| reference.fa (+ .fai) | /data/course/hg19_CYP2C_slices.fa – hg19 chr10:96,530,001-96,560,000 and chr10:96,699,001-96,725,000 |
+
+Checksums: data/raw/MD5SUMS – check them with  md5sum -c data/raw/MD5SUMS
+
+## How to run
+(to be written when the pipeline exists)
+
+## Author and date
+(your name, today&#x27;s date)</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 1.4 · README and .gitignore</div>
+  <ol class="steps">
+    <li data-task="p-readme" data-check="exists:README.md">Press <b>Create this file</b> above. It opens in the <b>Files</b> tab: fill in your name and the date, and save with <kbd>Ctrl</kbd>+<kbd>S</kbd>.</li>
+    <li data-task="p-git" data-check="exists:.gitignore">Real projects are kept under <b>version control</b> with git, so every change to the code is recorded. Results are not put in git – they can be regenerated. Create the <code>.gitignore</code> file below that says so (git is not available in this browser, but the file will be part of your project when you download it).</li>
+  </ol>
+</div>
+  <div class="codefile" data-path=".gitignore"><div class="cf-head"><span class="cf-name">.gitignore</span><span class="grow"></span><button class="do" type="button" data-file-create=".gitignore">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># Everything the pipeline can make again is not kept in version control
+results/
+logs/
+.snakemake/</pre></div>
+  <div class="q" data-q="p-readmeq">
+  <div class="q-text">The README says where the data came from. What do the checksums add that the README text cannot?</div>
+  <div class="q-model"><p>The README <i>claims</i> which files were used; the checksums let anyone <b>verify</b> the claim – that their copy is byte-for-byte the same as yours, and that nothing has changed since. Provenance you can check is worth much more than provenance you have to trust.</p></div>
+</div>
+
+</section>
+
+<section class="chapter" id="script" data-num="2" data-title="By hand, then a script" data-bench="terminal" hidden>
+  <h1>By hand, then a script</h1>
+  <div class="meta-row"><span class="pill time">≈ 30 min</span></div>
+  <p class="lede">First the familiar way: type each step. Then put the steps in a bash script – the simplest kind of pipeline – and find out what a script cannot do.</p>
+
+  <p>Make sure the terminal is in your project folder (the prompt ends in <code>cyp2c19-pipeline</code>; if not: <code>cd ~/cyp2c19-pipeline</code> <button class="do showme" type="button" data-term="cd ~/cyp2c19-pipeline">show me</button>). All paths from now on are <b>relative</b> to the project folder.</p>
+
+  <h2 id="h-hand">2.1 By hand</h2>
+  <p>These are the steps of the reads-to-variants practical, with minimap2 for mapping. Run them one after the other and read what each one prints.</p>
+  <div class="activity">
+  <div class="act-t">Activity 2.1 · Seven commands</div>
+  <ol class="steps">
+    <li data-task="h-mkdir" data-check="exists:results/variants">Folders for the results: <code>mkdir -p results/mapped results/qc results/variants</code> <button class="do showme" type="button" data-term="mkdir -p results/mapped results/qc results/variants">show me</button></li>
+    <li data-task="h-map" data-check="exists:results/mapped/NA12878.sorted.bam">Map the read pairs to the reference and sort the alignments by position (about 5 s): <code>minimap2 -ax sr -R &#x27;@RG\tID:NA12878\tSM:NA12878&#x27; data/raw/reference.fa data/raw/NA12878_R1.fastq data/raw/NA12878_R2.fastq | samtools sort -o results/mapped/NA12878.sorted.bam -</code> <button class="do showme" type="button" data-term="minimap2 -ax sr -R &#x27;@RG\tID:NA12878\tSM:NA12878&#x27; data/raw/reference.fa data/raw/NA12878_R1.fastq data/raw/NA12878_R2.fastq | samtools sort -o results/mapped/NA12878.sorted.bam -">show me</button><br><span class="small muted"><code>-ax sr</code>: short reads, SAM output; <code>-R</code> adds a <i>read group</i> naming the sample (<code>\t</code> means a tab); the final <code>-</code> tells samtools to read from the pipe.</span></li>
+    <li data-task="h-idx" data-check="exists:results/mapped/NA12878.sorted.bam.bai">Index the BAM file: <code>samtools index results/mapped/NA12878.sorted.bam</code> <button class="do showme" type="button" data-term="samtools index results/mapped/NA12878.sorted.bam">show me</button></li>
+    <li data-task="h-flag" data-check="exists:results/qc/NA12878.flagstat.txt">Count the mapped reads: <code>samtools flagstat results/mapped/NA12878.sorted.bam &gt; results/qc/NA12878.flagstat.txt</code> <button class="do showme" type="button" data-term="samtools flagstat results/mapped/NA12878.sorted.bam &gt; results/qc/NA12878.flagstat.txt">show me</button> then <code>head -5 results/qc/NA12878.flagstat.txt</code> <button class="do showme" type="button" data-term="head -5 results/qc/NA12878.flagstat.txt">show me</button></li>
+    <li data-task="h-call" data-check="exists:results/variants/NA12878.raw.vcf.gz">Call the variants: <code>bcftools mpileup -f data/raw/reference.fa results/mapped/NA12878.sorted.bam -Ou | bcftools call -mv -Oz -o results/variants/NA12878.raw.vcf.gz</code> <button class="do showme" type="button" data-term="bcftools mpileup -f data/raw/reference.fa results/mapped/NA12878.sorted.bam -Ou | bcftools call -mv -Oz -o results/variants/NA12878.raw.vcf.gz">show me</button></li>
+    <li data-task="h-filt" data-check="exists:results/variants/NA12878.filtered.vcf.gz">Keep the confident calls: <code>bcftools filter -i &#x27;QUAL&gt;=20 &amp;&amp; INFO/DP&gt;=5&#x27; -Oz -o results/variants/NA12878.filtered.vcf.gz results/variants/NA12878.raw.vcf.gz</code> <button class="do showme" type="button" data-term="bcftools filter -i &#x27;QUAL&gt;=20 &amp;&amp; INFO/DP&gt;=5&#x27; -Oz -o results/variants/NA12878.filtered.vcf.gz results/variants/NA12878.raw.vcf.gz">show me</button></li>
+    <li data-task="h-count" data-auto="term:command line~wc -l code=0 line~filtered">How many variants passed? <code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | wc -l</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | wc -l">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="h-n" data-accept="(^|\D)15(\D|$)" data-hint="the number printed by wc -l">
+  <div class="q-text">How many variants passed the filter?</div>
+  <div class="q-model"><p><b>15</b> of 60 raw calls.</p></div>
+</div>
+  <p>A number is easy to compare, but it does not prove two files are the same. A checksum of the variant records does. (Checksum the <i>records</i>, not the file: the header of a VCF file records the date and time it was made, so two identical analyses never give identical files.)</p>
+  <div class="activity">
+  <div class="act-t">Activity 2.2 · A fingerprint of the result</div>
+  <ol class="steps">
+    <li data-task="h-md5" data-auto="term:command line~md5sum code=0 line~filtered"><code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum">show me</button> – <code>-H</code> prints the variant records without the header.</li>
+  </ol>
+</div>
+  <div class="q" data-q="h-md5q" data-accept="09dd51431f" data-hint="the 32-character code printed by md5sum" data-placeholder="32 letters and digits">
+  <div class="q-text">Copy the checksum here. You will compare every later run – Snakemake, Galaxy, a colleague’s computer – with it.</div>
+  <div class="q-model"><p><code>09dd51431f385ed3863928eee0064125</code> – if yours differs, check that you used exactly the commands above.</p></div>
+</div>
+
+  <h2 id="h-script">2.2 A script – the simplest pipeline</h2>
+  <p>Typing commands is slow and error-prone, and the only record is your shell history. Put them in a file instead: a <b>bash script</b>. Lines starting with <code>#</code> are comments; a <code>\</code> at the end of a line continues the command on the next line.</p>
+  <div class="codefile" data-path="workflow/run_all.sh"><div class="cf-head"><span class="cf-name">workflow/run_all.sh</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/run_all.sh">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">#!/bin/bash
+# Variant calling for NA12878 – every step, in order (first version)
+mkdir -p results/mapped results/qc results/variants
+
+# 1. map the reads and sort the alignments
+minimap2 -ax sr -R &#x27;@RG\tID:NA12878\tSM:NA12878&#x27; \
+    data/raw/reference.fa data/raw/NA12878_R1.fastq data/raw/NA12878_R2.fastq \
+    | samtools sort -o results/mapped/NA12878.sorted.bam -
+
+# 2. index the BAM file, and count the mapped reads
+samtools index results/mapped/NA12878.sorted.bam
+samtools flagstat results/mapped/NA12878.sorted.bam &gt; results/qc/NA12878.flagstat.txt
+
+# 3. call the variants and keep the good ones
+bcftools mpileup -f data/raw/reference.fa results/mapped/NA12878.sorted.bam -Ou \
+    | bcftools call -mv -Oz -o results/variants/NA12878.raw.vcf.gz
+bcftools filter -i &#x27;QUAL&gt;=20 &amp;&amp; INFO/DP&gt;=5&#x27; -Oz -o results/variants/NA12878.filtered.vcf.gz \
+    results/variants/NA12878.raw.vcf.gz
+
+echo &quot;All steps finished.&quot;</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 2.3 · Run the script</div>
+  <ol class="steps">
+    <li data-task="h-create" data-check="exists:workflow/run_all.sh">Press <b>Create this file</b>. Read it in the editor: it is exactly the commands you typed.</li>
+    <li data-task="h-run" data-auto="script:done code=0 path~run_all">Run it: <code>bash workflow/run_all.sh</code> <button class="do showme" type="button" data-term="bash workflow/run_all.sh">show me</button> – watch the time in the status bar under the terminal.</li>
+    <li data-task="h-run2" data-auto="script:done code=0 path~run_all">Run it again: <code>bash workflow/run_all.sh</code> <button class="do showme" type="button" data-term="bash workflow/run_all.sh">show me</button>. Nothing has changed – what does the script do?</li>
+  </ol>
+</div>
+  <div class="q" data-q="h-rerun">
+  <div class="q-text">The second run redid every step. Why is that a problem for a real project – say 100 samples, when one new sample arrives, or when only the filter threshold changes?</div>
+  <div class="q-model"><p>A script has no idea what is already done: it cannot tell that the BAM files are up to date, so it repeats hours of mapping to change one threshold or add one sample. It lacks the two features the lecture named: <b>dependencies</b> (which file is made from which) and <b>re-entrancy</b> (continuing from where it stopped, redoing only what is needed). You could add checks by hand (“if the file exists, skip”) – but then an outdated file would never be updated.</p></div>
+</div>
+
+  <h2 id="h-fail">2.3 When a step fails</h2>
+  <p>A typo is all it takes. Break the script on purpose and see what it reports.</p>
+  <div class="activity">
+  <div class="act-t">Activity 2.4 · A silent failure</div>
+  <ol class="steps">
+    <li data-task="h-break" data-check="has:workflow/run_all.sh|NA12878_R3">In the editor, change <code>NA12878_R1.fastq</code> in the minimap2 command to <code>NA12878_R3.fastq</code> (a file that does not exist) and save with <kbd>Ctrl</kbd>+<kbd>S</kbd>. <button class="do showme" type="button" data-edit="workflow/run_all.sh">open run_all.sh</button></li>
+    <li data-task="h-broken" data-auto="term:command line~echo $?">Run it: <code>bash workflow/run_all.sh</code> <button class="do showme" type="button" data-term="bash workflow/run_all.sh">show me</button> – read <b>all</b> the output. Then ask the shell for the script’s exit status: <code>echo $?</code> <button class="do showme" type="button" data-term="echo $?">show me</button> (0 means success).</li>
+    <li data-task="h-stale" data-auto="term:command line~view -c code=0">Look at the results: <code>ls -l results/mapped results/variants</code> <button class="do showme" type="button" data-term="ls -l results/mapped results/variants">show me</button> – compare the sizes with before. How many reads are in the new BAM file? <code>samtools view -c results/mapped/NA12878.sorted.bam</code> <button class="do showme" type="button" data-term="samtools view -c results/mapped/NA12878.sorted.bam">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="h-stale-q">
+  <div class="q-text">minimap2 could not open its input – yet the script made new results and said “All steps finished.” Why did the later steps still “work”, and why is this dangerous?</div>
+  <div class="q-model"><p>minimap2 writes the SAM <b>header</b> before it opens the reads. So samtools sort received a valid header with no reads and wrote an <b>empty</b> BAM file (309 bytes, 0 reads, instead of about 500 kB). Indexing, flagstat, calling and filtering all ran without complaint on it and made empty results, and the script exited with status 0 – the status of its last command, <code>echo</code>. Nothing reports the failure: the results are simply wrong. Here they are conspicuously empty, but a failure halfway through a file – or one of two read files missing – gives results that look normal, and a report would say “no variants” where there are some.</p></div>
+</div>
+  <p>Bash can be told to stop at the first error. Three settings, known together as <b>strict mode</b>:</p>
+  <table class="table small">
+    <tr><td><code>set -e</code></td><td>stop as soon as a command fails</td></tr>
+    <tr><td><code>set -u</code></td><td>treat a variable that was never set as an error</td></tr>
+    <tr><td><code>set -o pipefail</code></td><td>a pipe (<code>a | b</code>) fails if <i>any</i> program in it fails, not only the last one</td></tr>
+  </table>
+  <div class="activity">
+  <div class="act-t">Activity 2.5 · Strict mode</div>
+  <ol class="steps">
+    <li data-task="h-strict" data-check="has:workflow/run_all.sh|set -euo pipefail">Add the line <code>set -euo pipefail</code> as the <b>second</b> line of the script (after <code>#!/bin/bash</code>), and save.</li>
+    <li data-task="h-stop" data-auto="script:done path~run_all code&gt;0">Run the broken script again: <code>bash workflow/run_all.sh</code> <button class="do showme" type="button" data-term="bash workflow/run_all.sh">show me</button> then <code>echo $?</code> <button class="do showme" type="button" data-term="echo $?">show me</button>. Where does it stop now?</li>
+    <li data-task="h-fixit" data-auto="script:done code=0 path~run_all">Fix the typo (back to <code>NA12878_R1.fastq</code>), save, and run the script once more: <code>bash workflow/run_all.sh</code> <button class="do showme" type="button" data-term="bash workflow/run_all.sh">show me</button></li>
+  </ol>
+</div>
+  <button class="do ai" type="button" data-ai="sh:strict">Ask the assistant what strict mode does</button>
+  <div class="q" data-q="h-pipefail" data-type="mcq">
+  <div class="q-text">Without <code>set -o pipefail</code>, what is the exit status of <code>minimap2 … | samtools sort …</code> when minimap2 fails but samtools sort succeeds?</div>
+  <div class="mcq"><label data-why="Bash reports the status of the last program in a pipe."><input type="radio"> the exit status of minimap2 (the first program)</label><label data-correct data-why="Without pipefail only the last program counts, so the failure of minimap2 is hidden."><input type="radio"> the exit status of samtools sort – success</label><label data-why="Bash does not look at the other programs unless pipefail is on."><input type="radio"> always 1</label></div>
+</div>
+  <div class="callout info">
+  <div class="co-t">What a workflow engine adds</div>
+  <p>Strict mode stops a script at the first error – but it still cannot tell which files are up to date, it still redoes everything, and it leaves half-made files behind. A <b>workflow engine</b> such as Snakemake adds exactly what is missing:</p>
+  <ul><li><b>dependencies</b> – it knows which file is made from which;</li><li><b>re-entrancy</b> – it redoes only what is needed;</li><li><b>clean failures</b> – it deletes the output of a failed step so that nothing half-made is mistaken for a result;</li><li><b>a record</b> – of what was run, when, with which code and settings.</li></ul>
+</div>
+
+</section>
+
+<section class="chapter" id="python" data-num="3" data-title="Python for Snakemake" data-bench="notebook" hidden>
+  <h1>Python for Snakemake</h1>
+  <div class="meta-row"><span class="pill time">≈ 35 min</span></div>
+  <p class="lede">A Snakefile is Python with a few extra keywords. Learn the handful of Python ideas you need – values, lists, dictionaries, file-name patterns, indentation – in the notebook, then run the same code as a script.</p>
+
+  <p>Snakemake is written in Python, and so is a Snakefile: a Python file with a few extra keywords. You do not need to be a programmer to write one – but you need to <b>read</b> a handful of Python ideas. Try each of them in the notebook, where you can change a line and run it again.</p>
+  <div class="callout info">
+  <div class="co-t">How the notebook works</div>
+  <p>Each grey box is a <b>cell</b> of Python. Run a cell with ▶ or <kbd>Shift</kbd>+<kbd>Enter</kbd>; its output appears below it. Python <b>remembers</b> the variables made by the cells you have run – in the order you ran them. The buttons in these instructions put code into a new cell and run it; you can then edit it and run it again.</p>
+  <p class="small muted">The notebook works in your project folder, so <code>config/config.yaml</code> means <code>~/cyp2c19-pipeline/config/config.yaml</code>.</p>
+</div>
+
+  <h2 id="y-values">3.1 Values, variables and lists</h2>
+  <div class="codefile nbcode" data-tag="py-values"><div class="cf-head"><span class="cf-name">Python</span><span class="grow"></span><button class="do" type="button" data-nb-code="run">Run it in the notebook</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">sample = &quot;NA12878&quot;          # text (a &quot;string&quot;) needs quotes
+min_qual = 20               # a number does not
+samples = [&quot;NA12878&quot;, &quot;NA12891&quot;, &quot;NA12892&quot;]   # a list: items in [ ], separated by commas
+
+print(sample, min_qual)
+print(samples[0], len(samples))</pre></div>
+  <table class="table small">
+    <tr><td><code>name = value</code></td><td>makes a <b>variable</b>: a name for a value</td></tr>
+    <tr><td><code>"NA12878"</code></td><td>a <b>string</b> (text) – always in quotes; <code>20</code> is a number</td></tr>
+    <tr><td><code>[a, b, c]</code></td><td>a <b>list</b>; <code>samples[0]</code> is the first item (Python counts from 0)</td></tr>
+    <tr><td><code>len(x)</code>, <code>print(x)</code></td><td><b>calling a function</b>: its name, then the inputs (<i>arguments</i>) in brackets</td></tr>
+    <tr><td><code># …</code></td><td>a comment, ignored by Python</td></tr>
+  </table>
+  <div class="activity">
+  <div class="act-t">Activity 3.1 · Your first Python</div>
+  <ol class="steps">
+    <li data-task="y-run" data-auto="nb:run ok=true tag=py-values">Run the cell above (the button puts it in the notebook and runs it).</li>
+    <li data-task="y-edit" data-auto="nb:run ok=true code~samples[1]">In the notebook, add the line <code>print(samples[1])</code> at the end of the cell, and run it again.</li>
+  </ol>
+</div>
+  <div class="q" data-q="y-index" data-accept="NA12892" data-hint="counting starts at 0">
+  <div class="q-text">What does <code>samples[2]</code> give?</div>
+  <div class="q-model"><p><code>NA12892</code> – the third item, because counting starts at 0.</p></div>
+</div>
+
+  <h2 id="y-comma">3.2 The comma trap</h2>
+  <div class="codefile nbcode" data-tag="py-comma"><div class="cf-head"><span class="cf-name">Python</span><span class="grow"></span><button class="do" type="button" data-nb-code="run">Run it in the notebook</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">bad = [&quot;NA12878&quot; &quot;NA12891&quot;]     # oops: no comma between the two names
+print(bad, len(bad))</pre></div>
+  <div class="q" data-q="y-len" data-accept="^\D*1\b" data-hint="count the items in the list that is printed">
+  <div class="q-text">What is <code>len(bad)</code>, and why?</div>
+  <div class="q-model"><p><b>1</b>. With no comma between them, Python joins two strings that stand next to each other into one: the list holds a single item, <code>'NA12878NA12891'</code>. There is no error message – it is a <i>silent</i> bug. Remember it: in a Snakefile, a missing comma between two input files glues their names together.</p></div>
+</div>
+  <button class="do ai" type="button" data-ai="py:comma">Ask the assistant why this happens</button>
+
+  <h2 id="y-dict">3.3 Dictionaries and a config file</h2>
+  <p>Settings belong in a <b>config file</b>, not in the code. YAML is a simple text format for them: <code>key: value</code> pairs, and lists with <code>-</code>. Create the pipeline’s config file now – Snakemake will read it in chapter 5.</p>
+  <div class="codefile" data-path="config/config.yaml"><div class="cf-head"><span class="cf-name">config/config.yaml</span><span class="grow"></span><button class="do" type="button" data-file-create="config/config.yaml">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># Settings for the pipeline. Change them here, not in the Snakefile.
+samples:
+  - NA12878
+
+reference: data/raw/reference.fa
+
+# variant filters
+min_qual: 20
+min_depth: 5</pre></div>
+  <div class="codefile nbcode" data-tag="py-config"><div class="cf-head"><span class="cf-name">Python</span><span class="grow"></span><button class="do" type="button" data-nb-code="run">Run it in the notebook</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">import yaml                               # a package that reads YAML files
+
+with open(&quot;config/config.yaml&quot;) as f:     # open the file; the indented block uses it
+    config = yaml.safe_load(f)            # YAML text -&gt; Python dictionaries and lists
+
+print(config)
+print(config[&quot;min_qual&quot;], config[&quot;samples&quot;])</pre></div>
+  <table class="table small">
+    <tr><td><code>{"min_qual": 20, ...}</code></td><td>a <b>dictionary</b>: values looked up by a key – <code>config["min_qual"]</code> gives 20</td></tr>
+    <tr><td><code>import yaml</code></td><td>loads a <b>package</b> (a library of ready-made functions)</td></tr>
+    <tr><td><code>with open(...) as f:</code></td><td>opens a file for the <b>indented block</b> below it, and closes it afterwards. Indentation (4 spaces) is how Python groups lines – it is not decoration.</td></tr>
+  </table>
+  <div class="activity">
+  <div class="act-t">Activity 3.2 · Read the settings</div>
+  <ol class="steps">
+    <li data-task="y-cfg" data-auto="nb:run ok=true tag=py-config">Create <code>config/config.yaml</code> (button above), then run the notebook cell that reads it.</li>
+  </ol>
+</div>
+  <div class="q" data-q="y-type" data-accept="list" data-hint="look at the brackets in the printed value">
+  <div class="q-text">What kind of Python value is <code>config["samples"]</code>?</div>
+  <div class="q-model"><p>A <b>list</b> (<code>['NA12878']</code>) – because the YAML file lists the samples with <code>-</code>.</p></div>
+</div>
+
+  <h2 id="y-names">3.4 Making file names – the heart of Snakemake</h2>
+  <div class="codefile nbcode" data-tag="py-names"><div class="cf-head"><span class="cf-name">Python</span><span class="grow"></span><button class="do" type="button" data-nb-code="run">Run it in the notebook</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">for s in config[&quot;samples&quot;]:                 # repeat the indented line for each sample
+    print(f&quot;data/raw/{s}_R1.fastq&quot;)           # an f-string fills in {s}
+
+pattern = &quot;results/variants/{sample}.filtered.vcf.gz&quot;
+print(pattern.format(sample=&quot;NA12878&quot;))       # .format fills in {sample} later – as Snakemake does</pre></div>
+  <p>An <b>f-string</b> (<code>f"…{s}…"</code>) fills in a value <i>now</i>; <code>.format()</code> fills in a pattern <i>later</i>. Snakemake works like <code>.format()</code>: your rules contain patterns such as <code>results/{sample}.bam</code>, and Snakemake fills in the sample when it knows which file you want. Snakemake’s <code>expand()</code> makes one name per value:</p>
+  <div class="codefile nbcode" data-tag="py-expand"><div class="cf-head"><span class="cf-name">Python</span><span class="grow"></span><button class="do" type="button" data-nb-code="run">Run it in the notebook</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">from snakemake.io import expand
+
+print(expand(&quot;results/variants/{sample}.filtered.vcf.gz&quot;, sample=config[&quot;samples&quot;]))
+print(expand(&quot;results/qc/{sample}.flagstat.txt&quot;, sample=[&quot;A&quot;, &quot;B&quot;, &quot;C&quot;]))</pre></div>
+  <div class="q" data-q="y-expand" data-accept="A\.flagstat.*B\.flagstat.*C\.flagstat|three|3" data-hint="run the cell and copy what it prints">
+  <div class="q-text">What does <code>expand("results/qc/{sample}.flagstat.txt", sample=["A", "B", "C"])</code> return?</div>
+  <div class="q-model"><p>A list of three file names: <code>['results/qc/A.flagstat.txt', 'results/qc/B.flagstat.txt', 'results/qc/C.flagstat.txt']</code>.</p></div>
+</div>
+
+  <h2 id="y-func">3.5 Functions and keyword arguments</h2>
+  <div class="codefile nbcode" data-tag="py-func"><div class="cf-head"><span class="cf-name">Python</span><span class="grow"></span><button class="do" type="button" data-nb-code="run">Run it in the notebook</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">def vcf_name(sample, kind=&quot;filtered&quot;):      # def: a reusable, named piece of code
+    return f&quot;results/variants/{sample}.{kind}.vcf.gz&quot;
+
+print(vcf_name(&quot;NA12878&quot;))                   # kind uses its default value
+print(vcf_name(&quot;NA12878&quot;, kind=&quot;raw&quot;))       # a keyword argument: name=value</pre></div>
+  <p>A rule in a Snakefile looks much like this: a name followed by a colon, an indented body, and <code>keyword=value</code> pairs such as <code>ref="data/raw/reference.fa"</code>. <button class="do ai" type="button" data-ai="py:basics">Ask the assistant to explain the Python in a Snakefile</button></p>
+
+  <h2 id="y-state">3.6 Notebook or script?</h2>
+  <p>A notebook remembers what you ran, in the order you ran it – not the order of the cells on the page. That makes it easy to fool yourself.</p>
+  <div class="activity">
+  <div class="act-t">Activity 3.3 · Hidden state</div>
+  <ol class="steps">
+    <li data-task="y-a" data-auto="nb:run ok=true code~threshold = 20">Put this in a cell and run it: <code>threshold = 20</code> <button class="do" type="button" data-nb-run="threshold = 20">run it</button></li>
+    <li data-task="y-b" data-auto="nb:run ok=true code~keeping variants">And this in the next cell: <code>print(&quot;keeping variants with QUAL &gt;=&quot;, threshold)</code> <button class="do" type="button" data-nb-run="print(&quot;keeping variants with QUAL &gt;=&quot;, threshold)">run it</button></li>
+    <li data-task="y-c" data-auto="nb:run ok=true code~keeping variants">Now edit the first cell to <code>threshold = 30</code> – but do <b>not</b> run it. Run only the second cell. What does the notebook claim now?</li>
+    <li data-task="y-d" data-auto="nb:kernel state=restarted">Press <b>Restart</b> (notebook toolbar) and then <b>Run all</b>. Which value is printed now?</li>
+  </ol>
+</div>
+  <div class="q" data-q="y-hidden">
+  <div class="q-text">After the edit, the page showed <code>threshold = 30</code> but printed 20. Why is that a reproducibility problem, and how do scripts avoid it?</div>
+  <div class="q-model"><p>The notebook’s memory (<i>state</i>) no longer matched the code on the page, so the output could not be reproduced from the code you can see. A <b>script</b> always runs from the top, in a fresh Python, so the code <i>is</i> the record. Good practice: explore in a notebook, check with <b>Restart and Run all</b>, and move the code that makes results into scripts that the pipeline runs.</p></div>
+</div>
+  <p>Now the same idea as a script: save it, then run it from the terminal.</p>
+  <div class="codefile" data-path="workflow/scripts/hello.py"><div class="cf-head"><span class="cf-name">workflow/scripts/hello.py</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/scripts/hello.py">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># List the files the pipeline will make for each sample in config/config.yaml
+import yaml
+
+with open(&quot;config/config.yaml&quot;) as f:
+    config = yaml.safe_load(f)
+
+print(&quot;Reference:&quot;, config[&quot;reference&quot;])
+for sample in config[&quot;samples&quot;]:
+    print(f&quot;results/variants/{sample}.filtered.vcf.gz&quot;)
+    print(f&quot;results/qc/{sample}.flagstat.txt&quot;)</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 3.4 · From notebook to script</div>
+  <ol class="steps">
+    <li data-task="y-script" data-check="exists:workflow/scripts/hello.py">Create <code>workflow/scripts/hello.py</code> (button above).</li>
+    <li data-task="y-pyrun" data-auto="py:script ok=true argv~hello.py">In the <b>Terminal</b>, in your project folder: <code>python workflow/scripts/hello.py</code> <button class="do showme" type="button" data-term="python workflow/scripts/hello.py">show me</button></li>
+  </ol>
+</div>
+  <div class="callout lecture">
+  <div class="co-t">Claerbout on interactive programs</div>
+  <p>“Interactive programs should always be able to save their state so they can restart. Otherwise, dependence on an interactive program can be a form of slavery (nonreproducible research).” – Jon Claerbout, <a href="https://sepwww.stanford.edu/sep/jon/reproducible.html" target="_blank" rel="noopener">Reproducible computational research</a></p>
+</div>
+  <button class="do ai" type="button" data-ai="py:nb">Ask the assistant: notebook or script?</button>
+
+</section>
+
+<section class="chapter" id="snakefile" data-num="4" data-title="Your first Snakefile" data-bench="editor" hidden>
+  <h1>Your first Snakefile</h1>
+  <div class="meta-row"><span class="pill time">≈ 45 min</span></div>
+  <p class="lede">Describe each step as a rule – what it needs, what it makes and the command in between – and let Snakemake work out the order, run only what is needed, and keep a record.</p>
+
+  <div class="callout lecture">
+  <div class="co-t">A rule, as in the lecture</div>
+  <p>A Snakefile is a set of <b>rules</b>. Each rule says how to make its <code>output</code> files from its <code>input</code> files – with a <code>shell</code> command, a Python <code>script</code> or a <code>run</code> block – and refers to its files as <code>{input}</code> and <code>{output}</code> in the command. Snakemake starts from the files you ask for (by default those of the <b>first</b> rule: its outputs – or, for a target rule such as <code>all</code>, its inputs), finds the rules that make them, then the rules that make <i>their</i> inputs, and so on – building a <b>DAG</b> (directed acyclic graph) of jobs.</p>
+</div>
+
+  <h2 id="k-first">4.1 The first rule</h2>
+  <div class="codefile" data-path="workflow/Snakefile"><div class="cf-head"><span class="cf-name">workflow/Snakefile</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/Snakefile">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule map_reads:
+    input:
+        &quot;data/raw/reference.fa&quot;,
+        &quot;data/raw/NA12878_R1.fastq&quot;,
+        &quot;data/raw/NA12878_R2.fastq&quot;,
+    output:
+        &quot;results/mapped/NA12878.sorted.bam&quot;,
+    shell:
+        &quot;minimap2 -ax sr -R &#x27;@RG\\tID:NA12878\\tSM:NA12878&#x27; {input} | samtools sort -o {output} -&quot;</pre><div class="cf-note">The <code>\\t</code> inside the Python string becomes <code>\t</code> in the command, which minimap2 turns into a tab.</div></div>
+  <table class="table small">
+    <tr><td><code>rule map_reads:</code></td><td>a rule and its name (just a label), then an indented body</td></tr>
+    <tr><td><code>input:</code></td><td>the files the rule needs – a list of strings, so <b>commas</b> between them</td></tr>
+    <tr><td><code>output:</code></td><td>the files it makes</td></tr>
+    <tr><td><code>shell:</code></td><td>the command. <code>{input}</code> becomes all the input files, in order, separated by spaces; <code>{output}</code> the output file</td></tr>
+  </table>
+  <div class="activity">
+  <div class="act-t">Activity 4.1 · Run a Snakefile</div>
+  <ol class="steps">
+    <li data-task="k-create" data-check="exists:workflow/Snakefile">Create <code>workflow/Snakefile</code> with the button above. (Snakemake finds <code>workflow/Snakefile</code> by itself.)</li>
+    <li data-task="k-burn" data-auto="term:command line~rm -r results code=0">“Burn” the results you made by hand – from now on the pipeline makes them: <code>rm -r results</code> <button class="do showme" type="button" data-term="rm -r results">show me</button></li>
+    <li data-task="k-dry" data-auto="smk:run argv~-n ok=true">Ask Snakemake what it <i>would</i> do – a <b>dry run</b>: <code>snakemake -n</code> <button class="do showme" type="button" data-term="snakemake -n">show me</button>. Find the job, and the <b>reason</b> it gives for running it.</li>
+    <li data-task="k-run" data-auto="smk:run argv~--cores ok=true">Run it, printing the command it runs (<code>-p</code>), on one CPU core: <code>snakemake --cores 1 -p</code> <button class="do showme" type="button" data-term="snakemake --cores 1 -p">show me</button></li>
+    <li data-task="k-again" data-auto="smk:run argv~--cores ok=true">Run it again: <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="k-nothing" data-type="mcq">
+  <div class="q-text">The second run said “Nothing to be done”. Why?</div>
+  <div class="mcq"><label data-why="Snakemake decides from the files, not from the session."><input type="radio"> Snakemake only runs a rule once per session</label><label data-correct data-why="So the job would produce the same file again – there is nothing to do."><input type="radio"> the output file exists and is newer than its inputs, and nothing it was made with has changed</label><label data-why="A dry run (-n) never runs anything."><input type="radio"> the dry run already made the file</label></div>
+  <div class="q-model"><p>Snakemake runs a job only if its output is missing, older than an input, or was made with different code, parameters, inputs or software than now (it keeps records in <code>.snakemake/metadata</code>) – or if you force it. This is <b>re-entrancy</b>: re-run a pipeline at any time and only what is needed happens.</p></div>
+</div>
+
+  <h2 id="k-more">4.2 Two rules of your own</h2>
+  <p>Now write the rules for the next two steps yourself. Here is the skeleton of <code>flagstat</code>: add it <b>below</b> <code>map_reads</code> in the editor, and replace each <code>____</code> with a file name. Its input is the sorted BAM file; its output should be <code>results/qc/NA12878.flagstat.txt</code>.</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule flagstat:
+    input:
+        &quot;____&quot;,
+    output:
+        &quot;____&quot;,
+    shell:
+        &quot;samtools flagstat {input} &gt; {output}&quot;</pre></div>
+  <p>Then write <code>index_bam</code> the same way. <code>samtools index</code> writes its output, the index <code>results/mapped/NA12878.sorted.bam.bai</code>, next to the BAM file by itself – so the command does not mention <code>{output}</code>, but the rule still needs an <code>output:</code> line to tell Snakemake which file it makes.</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule index_bam:
+    input:
+        &quot;____&quot;,
+    output:
+        &quot;____&quot;,
+    shell:
+        &quot;samtools index {input}&quot;</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 4.2 · Write, check, run</div>
+  <ol class="steps">
+    <li data-task="k-flag" data-check="has:workflow/Snakefile|rule flagstat">Add <code>rule flagstat</code> and save. Ask for its output file – Snakemake works out the rest: <code>snakemake --cores 1 -p results/qc/NA12878.flagstat.txt</code> <button class="do showme" type="button" data-term="snakemake --cores 1 -p results/qc/NA12878.flagstat.txt">show me</button></li>
+    <li data-task="k-idx" data-check="has:workflow/Snakefile|rule index_bam">Add <code>rule index_bam</code>, save, and ask for the index: <code>snakemake --cores 1 -p results/mapped/NA12878.sorted.bam.bai</code> <button class="do showme" type="button" data-term="snakemake --cores 1 -p results/mapped/NA12878.sorted.bam.bai">show me</button></li>
+  </ol>
+</div>
+  <p class="small">Stuck? <button class="do ai" type="button" data-ai="smk:index">Ask the assistant for these two rules</button> – and compare its answer with yours.</p>
+
+  <h2 id="k-ai">4.3 A rule from the AI assistant</h2>
+  <p>Variant calling is a longer command. Ask the AI assistant to write the rule – and treat its answer the way you would treat code from a stranger.</p>
+  <div class="activity">
+  <div class="act-t">Activity 4.3 · Check the AI’s code</div>
+  <ol class="steps">
+    <li data-task="k-ask" data-auto="ai:answer entry=smk:call"><button class="do ai" type="button" data-ai="smk:call">Ask the assistant for a variant-calling rule</button> Read the answer: does the explanation match the code?</li>
+    <li data-task="k-add" data-auto="ai:insert target=snakefile rules~call_variants">Press <b>Add rule call_variants to Snakefile</b> under the code (it goes at the end of your Snakefile), then check it with a dry run: <code>snakemake -n results/variants/NA12878.raw.vcf.gz</code> <button class="do showme" type="button" data-term="snakemake -n results/variants/NA12878.raw.vcf.gz">show me</button></li>
+    <li data-task="k-err" data-auto="smk:run argv~raw.vcf.gz ok=true">Read the error message carefully. What file is Snakemake looking for? Fix the rule yourself in the editor – or press <b>✦ Ask the AI assistant about this error</b> under the error in the terminal.</li>
+    <li data-task="k-call" data-check="exists:results/variants/NA12878.raw.vcf.gz">When the dry run works, run it: <code>snakemake --cores 1 results/variants/NA12878.raw.vcf.gz</code> <button class="do showme" type="button" data-term="snakemake --cores 1 results/variants/NA12878.raw.vcf.gz">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="k-comma">
+  <div class="q-text">What was wrong with the assistant’s rule, how did you find out, and why did Python not complain?</div>
+  <div class="q-model"><p>A <b>comma was missing</b> after <code>"data/raw/reference.fa"</code>. Python joins two adjacent strings into one, so Snakemake looked for a single input file called <code>data/raw/reference.faresults/mapped/NA12878.sorted.bam</code> – the dry run’s <b>MissingInputException</b> showed the glued name. Python raises no error because joining adjacent strings is legal (it is how long commands are split over lines). The assistant also explained the code confidently – an explanation is not evidence that code works; running it is.</p></div>
+</div>
+
+  <h2 id="k-all">4.4 Filter – and one rule to rule them all</h2>
+  <p>Write the last step yourself. The command is the one you ran by hand in chapter 2 – with the file names replaced by <code>{input}</code> and <code>{output}</code>:</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule filter_variants:
+    input:
+        &quot;results/variants/NA12878.raw.vcf.gz&quot;,
+    output:
+        &quot;results/variants/NA12878.filtered.vcf.gz&quot;,
+    shell:
+        &quot;____&quot;</pre></div>
+  <p>Finally, a <b>target rule</b>. Snakemake builds the first rule of the Snakefile when you give no target, so pipelines start with a rule – by convention called <code>all</code> – whose inputs are the files you want at the end. It has no output and no command. Put it at the <b>very top</b> of the Snakefile:</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule all:
+    input:
+        &quot;results/variants/NA12878.filtered.vcf.gz&quot;,
+        &quot;results/qc/NA12878.flagstat.txt&quot;,</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 4.4 · The whole pipeline</div>
+  <ol class="steps">
+    <li data-task="k-filter" data-check="has:workflow/Snakefile|rule filter_variants">Add <code>rule filter_variants</code> (with your command) below the other rules, and save.</li>
+    <li data-task="k-top" data-check="has:workflow/Snakefile|^rule all">Add <code>rule all</code> at the top, and save.</li>
+    <li data-task="k-burn2" data-auto="smk:run argv~--cores ok=true">Burn and build: <code>rm -r results</code> <button class="do showme" type="button" data-term="rm -r results">show me</button> then <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button></li>
+    <li data-task="k-md5" data-auto="term:command line~md5sum code=0 line~filtered">Is the result the same as by hand? <code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="k-notrun">
+  <div class="q-text">Look at the job list of the last run. Which of your rules did <b>not</b> run, and why not?</div>
+  <div class="q-model"><p><b>index_bam</b> did not run. No rule needs its output: <code>rule all</code> does not ask for the <code>.bai</code> file, and <code>call_variants</code> does not list it as an input (bcftools reads the whole BAM file without the index). Snakemake runs only the jobs needed for the files you ask for – the lecture’s rule: a job is executed if its output is a target, or is needed by another job, and is missing or out of date.</p></div>
+</div>
+  <p class="small">If something does not work, compare your Snakefile with this reference version (it is what you should have now):</p>
+  <div class="codefile" data-path="workflow/Snakefile"><div class="cf-head"><span class="cf-name">workflow/Snakefile</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/Snakefile">Replace my Snakefile with this</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># Variant calling for NA12878 – first version (one sample, names written out)
+
+rule all:
+    input:
+        &quot;results/variants/NA12878.filtered.vcf.gz&quot;,
+        &quot;results/qc/NA12878.flagstat.txt&quot;,
+
+
+rule map_reads:
+    input:
+        &quot;data/raw/reference.fa&quot;,
+        &quot;data/raw/NA12878_R1.fastq&quot;,
+        &quot;data/raw/NA12878_R2.fastq&quot;,
+    output:
+        &quot;results/mapped/NA12878.sorted.bam&quot;,
+    shell:
+        &quot;minimap2 -ax sr -R &#x27;@RG\\tID:NA12878\\tSM:NA12878&#x27; {input} | samtools sort -o {output} -&quot;
+
+
+rule index_bam:
+    input:
+        &quot;results/mapped/NA12878.sorted.bam&quot;,
+    output:
+        &quot;results/mapped/NA12878.sorted.bam.bai&quot;,
+    shell:
+        &quot;samtools index {input}&quot;
+
+
+rule flagstat:
+    input:
+        &quot;results/mapped/NA12878.sorted.bam&quot;,
+    output:
+        &quot;results/qc/NA12878.flagstat.txt&quot;,
+    shell:
+        &quot;samtools flagstat {input} &gt; {output}&quot;
+
+
+rule call_variants:
+    input:
+        &quot;data/raw/reference.fa&quot;,
+        &quot;results/mapped/NA12878.sorted.bam&quot;,
+    output:
+        &quot;results/variants/NA12878.raw.vcf.gz&quot;,
+    shell:
+        &quot;bcftools mpileup -f {input} -Ou | bcftools call -mv -Oz -o {output}&quot;
+
+
+rule filter_variants:
+    input:
+        &quot;results/variants/NA12878.raw.vcf.gz&quot;,
+    output:
+        &quot;results/variants/NA12878.filtered.vcf.gz&quot;,
+    shell:
+        &quot;bcftools filter -i &#x27;QUAL&gt;=20 &amp;&amp; INFO/DP&gt;=5&#x27; -Oz -o {output} {input}&quot;</pre></div>
+
+  <h2 id="k-dag">4.5 See the DAG</h2>
+  <div class="activity">
+  <div class="act-t">Activity 4.5 · Draw the graph</div>
+  <ol class="steps">
+    <li data-task="k-dagrun" data-auto="dot:render format=svg">Snakemake describes its DAG in the <code>dot</code> language; the Graphviz program <code>dot</code> draws it: <code>snakemake --dag | dot -Tsvg &gt; dag.svg</code> <button class="do showme" type="button" data-term="snakemake --dag | dot -Tsvg &gt; dag.svg">show me</button></li>
+    <li data-task="k-dagopen" data-auto="editor:view name=dag.svg">Open the picture: <code>open dag.svg</code> <button class="do showme" type="button" data-term="open dag.svg">show me</button></li>
+  </ol>
+</div>
+  <p class="small muted">In the lecture the command was <code>snakemake --dag | dot -Tpdf &gt; dag.pdf</code>. This browser’s Graphviz makes SVG and PNG pictures but not PDF. <code>snakemake --rulegraph</code> draws one box per rule instead of per job – simpler when there are many samples. <button class="do ai" type="button" data-ai="smk:dag">Ask the assistant about the DAG</button></p>
+
+  <h2 id="k-reentry">4.6 Re-entrancy and provenance</h2>
+  <p>Now test the promises of a workflow engine. Run each dry run and read the <b>reason</b> Snakemake gives for each job.</p>
+  <div class="activity">
+  <div class="act-t">Activity 4.6 · What does Snakemake re-run?</div>
+  <ol class="steps">
+    <li data-task="k-rm1" data-auto="smk:run argv~-n ok=true">Delete one result: <code>rm results/qc/NA12878.flagstat.txt</code> <button class="do showme" type="button" data-term="rm results/qc/NA12878.flagstat.txt">show me</button>, then <code>snakemake -n</code> <button class="do showme" type="button" data-term="snakemake -n">show me</button>. Which jobs would run?</li>
+    <li data-task="k-code" data-check="has:workflow/Snakefile|QUAL&gt;=30">Change <code>QUAL&gt;=20</code> to <code>QUAL&gt;=30</code> in <code>filter_variants</code>, save, and dry-run again: <code>snakemake -n</code> <button class="do showme" type="button" data-term="snakemake -n">show me</button></li>
+    <li data-task="k-codeback" data-auto="smk:run argv~--cores ok=true">Change it back to 20, save, and dry-run once more: <code>snakemake -n</code> <button class="do showme" type="button" data-term="snakemake -n">show me</button> – then build what is missing: <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button></li>
+    <li data-task="k-fail" data-auto="smk:run argv~flagstat ok=false">Now make a step fail: in <code>rule flagstat</code> change <code>samtools flagstat</code> to <code>samtools flagstatt</code> (a typo), save, and force that rule to run: <code>snakemake --cores 1 -R flagstat</code> <button class="do showme" type="button" data-term="snakemake --cores 1 -R flagstat">show me</button>. Read the whole message.</li>
+    <li data-task="k-gone" data-auto="term:command line~ls -l results/qc">Is there a half-made flagstat file left? <code>ls -l results/qc</code> <button class="do showme" type="button" data-term="ls -l results/qc">show me</button> Then fix the typo, save, and run <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button>.</li>
+  </ol>
+</div>
+  <div class="q" data-q="k-reasons">
+  <div class="q-text">What reasons did Snakemake give (a) after you deleted the flagstat file and (b) after you changed the threshold? Why did changing it back need no re-run?</div>
+  <div class="q-model"><p>(a) <b>Missing output files</b>: only <code>flagstat</code> (and <code>all</code>) had to run – not the mapping or calling. (b) <b>Code has changed since last execution</b> for <code>filter_variants</code>: Snakemake stores the code each output was made with (in <code>.snakemake/metadata</code>) and notices that the rule is no longer the same – <i>provenance information</i>, beyond the file times of the lecture’s rule list. After changing it back, the code matched the record of the last run again, so the existing file was still valid.</p></div>
+</div>
+  <div class="q" data-q="k-failq">
+  <div class="q-text">Compare what Snakemake did when the flagstat step failed with what your bash script did in chapter 2.</div>
+  <div class="q-model"><p>Snakemake stopped at the failing job with a clear <b>Error in rule flagstat</b> block (and the program’s own error message), exited with a non-zero status, and <b>removed the output</b> of the failed job – the shell had already created an empty flagstat file with <code>&gt;</code> – so no half-made file could be mistaken for a result. The bash script without strict mode carried on, reported success and left wrong (empty) results behind.</p></div>
+</div>
+
+</section>
+
+<section class="chapter" id="generalise" data-num="5" data-title="Any sample, any setting" data-bench="editor" hidden>
+  <h1>One Snakefile for any sample</h1>
+  <div class="meta-row"><span class="pill time">≈ 50 min</span></div>
+  <p class="lede">Make the pipeline general – wildcards, a config file, named inputs, parameters, logs and a Python script – and watch Snakemake keep track of what each result was made with.</p>
+
+  <p>Your pipeline works – for one sample, with its name and the thresholds written into every rule. Now make it general: <b>wildcards</b> for samples, the <b>config file</b> for settings, <b>named inputs</b>, <b>parameters</b>, <b>logs</b>, and a <b>Python script</b> for a report.</p>
+
+  <h2 id="g-wild">5.1 Wildcards</h2>
+  <p>Replace the sample name with a <b>wildcard</b>, <code>{sample}</code>. When Snakemake needs <code>results/mapped/NA12878.sorted.bam</code>, it matches it against the output pattern <code>results/mapped/{sample}.sorted.bam</code>, sets <code>sample = NA12878</code>, and fills the same value into the inputs. Inside the command, the value is <code>{wildcards.sample}</code>. Here is <code>map_reads</code> with wildcards – replace yours with it:</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule map_reads:
+    input:
+        &quot;data/raw/reference.fa&quot;,
+        &quot;data/raw/{sample}_R1.fastq&quot;,
+        &quot;data/raw/{sample}_R2.fastq&quot;,
+    output:
+        &quot;results/mapped/{sample}.sorted.bam&quot;,
+    shell:
+        &quot;minimap2 -ax sr -R &#x27;@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}&#x27; {input} &quot;
+        &quot;| samtools sort -o {output} -&quot;</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 5.1 · Any sample</div>
+  <ol class="steps">
+    <li data-task="g-map" data-check="has:workflow/Snakefile|wildcards\.sample">Replace your <code>map_reads</code> rule with the one above, and save. (Two strings next to each other in <code>shell:</code> are joined into one command – on purpose this time.)</li>
+    <li data-task="g-rest" data-check="has:workflow/Snakefile|variants/\{sample\}\.filtered">Now do the same in <code>index_bam</code>, <code>flagstat</code>, <code>call_variants</code> and <code>filter_variants</code> yourself: replace <code>NA12878</code> by <code>{sample}</code> in their <code>input:</code> and <code>output:</code>. Leave <code>rule all</code> as it is – it names the files you want. Save.</li>
+    <li data-task="g-dry" data-auto="smk:run argv~--cores ok=true">Dry run: <code>snakemake -n</code> <button class="do showme" type="button" data-term="snakemake -n">show me</button>. Which job has a different reason from the others? Then run it: <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="g-why">
+  <div class="q-text">Which job re-ran because of its own change, and why did the jobs after it re-run too?</div>
+  <div class="q-model"><p><b>map_reads</b>: <i>Code has changed since last execution</i> – its command now uses <code>{wildcards.sample}</code>. The jobs downstream re-ran with the reason <i>Input files updated by another job</i>: their input, the BAM file, was about to be remade. Rules whose command did not change (e.g. <code>samtools flagstat {input} &gt; {output}</code>) were only re-run because their input changed – replacing <code>NA12878</code> by <code>{sample}</code> in a file pattern changes no command.</p></div>
+</div>
+
+  <h2 id="g-config">5.2 Settings from the config file</h2>
+  <p>You created <code>config/config.yaml</code> in chapter 3. <code>configfile:</code> reads it into a Python dictionary called <code>config</code> – exactly what you did with <code>yaml.safe_load</code> in the notebook. Replace your <code>rule all</code> (at the top) with this block, which uses the sample list from the config file and <code>expand()</code>:</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">configfile: &quot;config/config.yaml&quot;
+
+SAMPLES = config[&quot;samples&quot;]
+REF = config[&quot;reference&quot;]
+
+
+rule all:
+    input:
+        expand(&quot;results/variants/{sample}.filtered.vcf.gz&quot;, sample=SAMPLES),
+        expand(&quot;results/qc/{sample}.flagstat.txt&quot;, sample=SAMPLES),</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 5.2 · One list of samples</div>
+  <ol class="steps">
+    <li data-task="g-top" data-check="has:workflow/Snakefile|configfile">Replace <code>rule all</code> with the block above, save, and dry-run: <code>snakemake -n</code> <button class="do showme" type="button" data-term="snakemake -n">show me</button>. Nothing to do – the same files, now listed by <code>expand()</code>.</li>
+    <li data-task="g-new" data-auto="smk:run argv~-n ok=false">Pretend a second sample arrives: in <code>config/config.yaml</code> add a line <code>  - NA12891</code> under <code>- NA12878</code>, save, and dry-run: <code>snakemake -n</code> <button class="do showme" type="button" data-term="snakemake -n">show me</button>. Read the error: which files would the new sample need? Then remove <code>NA12891</code> again (we have no reads for it) and save.</li>
+  </ol>
+</div>
+  <div class="q" data-q="g-newq">
+  <div class="q-text">What did Snakemake tell you about the new sample, and what would you need to do to analyse it?</div>
+  <div class="q-model"><p>A <b>MissingInputException</b> for rule <code>map_reads</code>: to make <code>results/mapped/NA12891.sorted.bam</code> it needs <code>data/raw/NA12891_R1.fastq</code> and <code>data/raw/NA12891_R2.fastq</code>, which do not exist. With the two read files in <code>data/raw/</code>, one command would analyse the new sample – and leave NA12878’s results untouched, because they are up to date.</p></div>
+</div>
+
+  <h2 id="g-named">5.3 Named inputs and logs</h2>
+  <p>With several inputs, <b>names</b> are clearer than positions (the lecture: <i>give them a name – refer by name</i>): <code>ref=…</code> in <code>input:</code>, <code>{input.ref}</code> in the command. A <code>log:</code> file keeps each program’s messages. Replace your <code>map_reads</code> with this version – it also takes the reference from the config file:</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule map_reads:
+    input:
+        ref=REF,
+        r1=&quot;data/raw/{sample}_R1.fastq&quot;,
+        r2=&quot;data/raw/{sample}_R2.fastq&quot;,
+    output:
+        &quot;results/mapped/{sample}.sorted.bam&quot;,
+    log:
+        &quot;logs/map_reads/{sample}.log&quot;,
+    threads: 1
+    shell:
+        &quot;minimap2 -ax sr -t {threads} -R &#x27;@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}&#x27; &quot;
+        &quot;{input.ref} {input.r1} {input.r2} 2&gt; {log} &quot;
+        &quot;| samtools sort -o {output} - 2&gt;&gt; {log}&quot;</pre></div>
+  <table class="table small">
+    <tr><td><code>ref=REF</code></td><td>a <b>named</b> input, used as <code>{input.ref}</code> in the command. <code>REF</code> is the Python variable set from the config file at the top of the Snakefile.</td></tr>
+    <tr><td><code>threads: 1</code></td><td>how many CPU cores the job may use; <code>{threads}</code> puts the number into the command (<code>-t</code> is minimap2’s option for threads).</td></tr>
+    <tr><td><code>log:</code></td><td>the job’s log file, <code>{log}</code> in the command.</td></tr>
+    <tr><td><code>2&gt; {log}</code></td><td>sends a program’s messages – its <i>standard error</i>, stream 2 – to the log file. <code>2&gt;&gt;</code> adds them to the end of the file instead of replacing it, so both programs’ messages are kept.</td></tr>
+  </table>
+  <div class="activity">
+  <div class="act-t">Activity 5.3 · Names, logs – and the AI again</div>
+  <ol class="steps">
+    <li data-task="g-mapnamed" data-check="has:workflow/Snakefile|input\.r1">Replace <code>map_reads</code> with the version above, save, and run <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button>. Then read the log: <code>cat logs/map_reads/NA12878.log</code> <button class="do showme" type="button" data-term="cat logs/map_reads/NA12878.log">show me</button></li>
+    <li data-task="g-ainamed" data-auto="ai:insert target=snakefile rules~call_variants">Ask the assistant to do the same for variant calling: <button class="do ai" type="button" data-ai="gen:named">Rewrite call_variants with named inputs</button> Press <b>Replace rule call_variants in Snakefile</b> under its code.</li>
+    <li data-task="g-runnamed" data-auto="smk:run argv~--cores ok=true">Run it: <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button>. If it fails, read the error <b>and</b> the log file it points to – then fix the rule, or ask the assistant about the error.</li>
+  </ol>
+</div>
+  <div class="q" data-q="g-input">
+  <div class="q-text">What was wrong with the assistant’s <code>call_variants</code>, and why did <code>index_bam</code> run this time?</div>
+  <div class="q-model"><p>The command still used <code>{input}</code>, which – with named inputs too – means <b>all</b> the inputs: the reference, the BAM <i>and the index</i>. bcftools tried to read the <code>.bai</code> index as a BAM file (“Exec format error”) and failed. The fix is <code>-f {input.ref} {input.bam}</code>. <code>index_bam</code> ran because the new rule lists the index as an input (<code>bai=…</code>): now a job needs it.</p></div>
+</div>
+
+  <h2 id="g-params">5.4 Parameters</h2>
+  <p>The filter thresholds are settings, so they belong in the config file. <code>params:</code> passes values to the command as <code>{params.name}</code> – and Snakemake records them.</p>
+  <div class="activity">
+  <div class="act-t">Activity 5.4 · Thresholds from the config file</div>
+  <ol class="steps">
+    <li data-task="g-aiparams" data-auto="ai:insert target=snakefile rules~filter_variants"><button class="do ai" type="button" data-ai="gen:params">Ask how to take the thresholds from config.yaml</button> Press <b>Replace rule filter_variants in Snakefile</b> under the rule, and run <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button>.</li>
+    <li data-task="g-fixparams" data-check="has:workflow/Snakefile|QUAL&gt;=\{params\.min_qual\}">If it fails, find out why (the program’s help text is printed with the error) and fix the command – keeping <code>{params.min_qual}</code> and <code>{params.min_depth}</code>. Run again until it works.</li>
+    <li data-task="g-md5" data-auto="term:command line~md5sum code=0 line~filtered">Same result as ever? <code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum">show me</button></li>
+    <li data-task="g-30" data-check="has:config/config.yaml|min_qual: 30">Change <code>min_qual: 20</code> to <code>min_qual: 30</code> in <code>config/config.yaml</code>, save, and dry-run: <code>snakemake -n</code> <button class="do showme" type="button" data-term="snakemake -n">show me</button>. Then run it and count: <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button> <code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | wc -l</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | wc -l">show me</button> Finally set it back to <b>20</b>, save, and run <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button> once more.</li>
+  </ol>
+</div>
+  <div class="q" data-q="g-options">
+  <div class="q-text">What was wrong with the assistant’s <code>filter_variants</code>? What does this tell you about AI-written code?</div>
+  <div class="q-model"><p>It used options that <b>do not exist</b>: bcftools filter has no <code>--min-qual</code> or <code>--min-depth</code> (bcftools printed “unrecognized option” and its real options). The fix is an expression, <code>-i 'QUAL&gt;={params.min_qual} &amp;&amp; INFO/DP&gt;={params.min_depth}'</code>. AI assistants can invent plausible options, functions or even tools; check against <code>--help</code> or the manual, and test.</p></div>
+</div>
+  <div class="q" data-q="g-30q" data-accept="\b13\b" data-hint="count with wc -l after the run">
+  <div class="q-text">With <code>min_qual: 30</code>, how many variants passed – and what reason did the dry run give?</div>
+  <div class="q-model"><p><b>13</b> (two calls have QUAL between 20 and 30). The reason was <i>Params have changed since last execution</i>, showing the old and new value – Snakemake compared the recorded parameters of the existing file with the config file. Only <code>filter_variants</code> and what comes after it re-ran.</p></div>
+</div>
+
+  <h2 id="g-script">5.5 A Python script in the pipeline</h2>
+  <p>The last step makes a table and a plot with Python. With <code>script:</code>, Snakemake runs a Python script and gives it an object called <code>snakemake</code>, so the script reads <code>snakemake.input</code> and writes <code>snakemake.output.table</code> instead of file names written into it. Read the script with the table below it: some ideas are from chapter 3, the others are new – you need to read them, not write them.</p>
+  <div class="codefile" data-path="workflow/scripts/summarise_variants.py"><div class="cf-head"><span class="cf-name">workflow/scripts/summarise_variants.py</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/scripts/summarise_variants.py">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># Summarise the filtered variants: a table of counts and a plot of call quality.
+# Snakemake runs this script and gives it an object called `snakemake`
+# with the rule&#x27;s input, output, params, wildcards, ...
+import gzip
+
+import pandas as pd
+import matplotlib
+
+matplotlib.use(&quot;Agg&quot;)  # draw plots into files, not on a screen
+import matplotlib.pyplot as plt
+
+rows = []
+for path in snakemake.input:
+    sample = path.split(&quot;/&quot;)[-1].split(&quot;.&quot;)[0]  # results/variants/NA12878.filtered.vcf.gz -&gt; NA12878
+    with gzip.open(path, &quot;rt&quot;) as vcf:
+        for line in vcf:
+            if line.startswith(&quot;#&quot;):  # skip the header lines
+                continue
+            fields = line.rstrip(&quot;\n&quot;).split(&quot;\t&quot;)
+            chrom, pos, ref, alt, qual = fields[0], int(fields[1]), fields[3], fields[4], float(fields[5])
+            genotype = fields[9].split(&quot;:&quot;)[0]
+            kind = &quot;SNP&quot; if len(ref) == 1 and len(alt) == 1 else &quot;indel&quot;
+            rows.append({&quot;sample&quot;: sample, &quot;chrom&quot;: chrom, &quot;pos&quot;: pos, &quot;ref&quot;: ref, &quot;alt&quot;: alt,
+                         &quot;qual&quot;: qual, &quot;genotype&quot;: genotype, &quot;type&quot;: kind})
+
+variants = pd.DataFrame(rows)
+summary = variants.groupby([&quot;sample&quot;, &quot;chrom&quot;, &quot;type&quot;, &quot;genotype&quot;]).size().reset_index(name=&quot;variants&quot;)
+summary.to_csv(snakemake.output.table, sep=&quot;\t&quot;, index=False)
+
+fig, ax = plt.subplots(figsize=(6, 4))
+for sample, group in variants.groupby(&quot;sample&quot;):
+    ax.hist(group[&quot;qual&quot;], bins=20, alpha=0.7, label=sample)
+ax.set_xlabel(&quot;Variant quality (QUAL)&quot;)
+ax.set_ylabel(&quot;Number of variants&quot;)
+ax.set_title(&quot;Quality of the filtered variant calls&quot;)
+ax.legend()
+fig.tight_layout()
+fig.savefig(snakemake.output.plot, dpi=100)</pre></div>
+  <table class="table small">
+    <tr><td><code>for path in snakemake.input:</code></td><td>repeat the indented lines for each input file of the rule</td></tr>
+    <tr><td><code>path.split("/")[-1].split(".")[0]</code></td><td><code>.split("/")</code> cuts text into a list at every <code>/</code>; <code>[-1]</code> is the <i>last</i> item (the file name); the part before the first <code>.</code> is the sample name</td></tr>
+    <tr><td><code>with gzip.open(path, "rt") as vcf:</code></td><td>open a compressed file as text (<code>"rt"</code>) for the indented block</td></tr>
+    <tr><td><code>if …: continue</code></td><td>if the line is a header line, skip to the next line</td></tr>
+    <tr><td><code>line.rstrip("\n").split("\t")</code></td><td>remove the line break, then cut the line into its tab-separated columns</td></tr>
+    <tr><td><code>chrom, pos, … = fields[0], int(fields[1]), …</code></td><td>several variables at once; <code>int()</code> and <code>float()</code> turn text into numbers</td></tr>
+    <tr><td><code>"SNP" if … else "indel"</code></td><td>one of two values, chosen by a condition</td></tr>
+    <tr><td><code>rows.append({…})</code></td><td>add one row – a dictionary – to the list <code>rows</code></td></tr>
+    <tr><td><code>pd.DataFrame(rows)</code>, <code>.groupby([…]).size()</code></td><td>pandas: a table made from the rows; count the rows in each group (sample, chromosome, type, genotype)</td></tr>
+    <tr><td><code>plt.subplots()</code>, <code>ax.hist(…)</code>, <code>fig.savefig(…)</code></td><td>matplotlib: make a figure, draw a histogram of the QUAL values, save it as a file</td></tr>
+  </table>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule summarise:
+    input:
+        expand(&quot;results/variants/{sample}.filtered.vcf.gz&quot;, sample=SAMPLES),
+    output:
+        table=&quot;results/report/variant_summary.tsv&quot;,
+        plot=&quot;results/report/variant_quality.png&quot;,
+    script:
+        &quot;scripts/summarise_variants.py&quot;</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 5.5 · A report</div>
+  <ol class="steps">
+    <li data-task="g-sfile" data-check="exists:workflow/scripts/summarise_variants.py">Create the script (button above).</li>
+    <li data-task="g-srule" data-check="has:workflow/Snakefile|rule summarise">Add <code>rule summarise</code> (above) at the end of the Snakefile, and add <code>"results/report/variant_summary.tsv",</code> to the inputs of <code>rule all</code>. Save.</li>
+    <li data-task="g-srun" data-check="exists:results/report/variant_summary.tsv">Run it: <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button> – then <code>cat results/report/variant_summary.tsv</code> <button class="do showme" type="button" data-term="cat results/report/variant_summary.tsv">show me</button> and <code>open results/report/variant_quality.png</code> <button class="do showme" type="button" data-term="open results/report/variant_quality.png">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="g-table" data-accept="(^|\D)3(\D|$)" data-hint="the row with human_CYP2C9 and 1/1">
+  <div class="q-text">According to the summary table, how many homozygous (1/1) variants are there on <code>human_CYP2C9</code>?</div>
+  <div class="q-model"><p><b>3</b> – and 8 heterozygous (0/1) ones; <i>CYP2C19</i> has 4, all heterozygous.</p></div>
+</div>
+  <button class="do ai" type="button" data-ai="gen:script">Ask the assistant to explain the script</button>
+  <p class="small">Your Snakefile should now be equivalent to this reference version – compare, or replace yours if it will not work:</p>
+  <div class="codefile" data-path="workflow/Snakefile"><div class="cf-head"><span class="cf-name">workflow/Snakefile</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/Snakefile">Replace my Snakefile with this</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># =====================================================================
+#  Variant calling for CYP2C19 / CYP2C9 – a reproducible pipeline
+#  Run from the project folder:   snakemake --cores 1
+# =====================================================================
+
+configfile: &quot;config/config.yaml&quot;
+
+SAMPLES = config[&quot;samples&quot;]
+REF = config[&quot;reference&quot;]
+
+
+# the target rule: the files we want at the end
+rule all:
+    input:
+        expand(&quot;results/variants/{sample}.filtered.vcf.gz&quot;, sample=SAMPLES),
+        expand(&quot;results/qc/{sample}.flagstat.txt&quot;, sample=SAMPLES),
+        &quot;results/report/variant_summary.tsv&quot;,
+
+
+# 1. align the reads to the reference and sort the alignments
+rule map_reads:
+    input:
+        ref=REF,
+        r1=&quot;data/raw/{sample}_R1.fastq&quot;,
+        r2=&quot;data/raw/{sample}_R2.fastq&quot;,
+    output:
+        &quot;results/mapped/{sample}.sorted.bam&quot;,
+    log:
+        &quot;logs/map_reads/{sample}.log&quot;,
+    threads: 1
+    shell:
+        &quot;minimap2 -ax sr -t {threads} -R &#x27;@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}&#x27; &quot;
+        &quot;{input.ref} {input.r1} {input.r2} 2&gt; {log} &quot;
+        &quot;| samtools sort -o {output} - 2&gt;&gt; {log}&quot;
+
+
+# 2. index the sorted BAM file
+rule index_bam:
+    input:
+        &quot;results/mapped/{sample}.sorted.bam&quot;,
+    output:
+        &quot;results/mapped/{sample}.sorted.bam.bai&quot;,
+    shell:
+        &quot;samtools index {input}&quot;
+
+
+# 3. mapping statistics
+rule flagstat:
+    input:
+        &quot;results/mapped/{sample}.sorted.bam&quot;,
+    output:
+        &quot;results/qc/{sample}.flagstat.txt&quot;,
+    shell:
+        &quot;samtools flagstat {input} &gt; {output}&quot;
+
+
+# 4. call variants
+rule call_variants:
+    input:
+        ref=REF,
+        bam=&quot;results/mapped/{sample}.sorted.bam&quot;,
+        bai=&quot;results/mapped/{sample}.sorted.bam.bai&quot;,
+    output:
+        &quot;results/variants/{sample}.raw.vcf.gz&quot;,
+    log:
+        &quot;logs/call_variants/{sample}.log&quot;,
+    shell:
+        &quot;bcftools mpileup -f {input.ref} {input.bam} -Ou 2&gt; {log} &quot;
+        &quot;| bcftools call -mv -Oz -o {output} 2&gt;&gt; {log}&quot;
+
+
+# 5. keep good-quality calls
+rule filter_variants:
+    input:
+        &quot;results/variants/{sample}.raw.vcf.gz&quot;,
+    output:
+        &quot;results/variants/{sample}.filtered.vcf.gz&quot;,
+    params:
+        min_qual=config[&quot;min_qual&quot;],
+        min_depth=config[&quot;min_depth&quot;],
+    shell:
+        &quot;bcftools filter -i &#x27;QUAL&gt;={params.min_qual} &amp;&amp; INFO/DP&gt;={params.min_depth}&#x27; &quot;
+        &quot;-Oz -o {output} {input}&quot;
+
+
+# 6. a table and a plot, made by a Python script
+rule summarise:
+    input:
+        expand(&quot;results/variants/{sample}.filtered.vcf.gz&quot;, sample=SAMPLES),
+    output:
+        table=&quot;results/report/variant_summary.tsv&quot;,
+        plot=&quot;results/report/variant_quality.png&quot;,
+    script:
+        &quot;scripts/summarise_variants.py&quot;</pre></div>
+
+  <div class="optional">
+    <h3>Extension: a one-liner from the assistant <span class="pill ext">Extension</span></h3>
+    <p><button class="do ai" type="button" data-ai="gen:count">Ask for a quick rule that counts variants per chromosome</button> Add it, run <code>snakemake --cores 1 results/qc/NA12878.per_chrom.txt</code>, and work out from the error message how to fix it.</p>
+  </div>
+
+</section>
+
+<section class="chapter" id="envs" data-num="6" data-title="Software environments" data-bench="terminal" hidden>
+  <h1>Software environments</h1>
+  <div class="meta-row"><span class="pill time">≈ 40 min</span></div>
+  <p class="lede">Same data, same Snakefile, same settings – different results. Find out why, pin the software, and record the environment.</p>
+
+  <p>Same data, same Snakefile, same settings – different results? It happens when the <b>software</b> differs. The last part of Claerbout’s scholarship is “the full software environment”.</p>
+
+  <h2 id="e-what">6.1 Which software are you using?</h2>
+  <p>This practical uses <b>conda</b> (the package manager from the lecture, here Miniforge with the conda-forge and bioconda channels). An <b>environment</b> is a folder of programs with particular versions; the active one decides which program a command runs.</p>
+  <div class="activity">
+  <div class="act-t">Activity 6.1 · Look at your environment</div>
+  <ol class="steps">
+    <li data-task="e-list" data-auto="term:command line~conda env list code=0"><code>conda env list</code> <button class="do showme" type="button" data-term="conda env list">show me</button> – the <code>*</code> marks the active environment (also shown in the prompt).</li>
+    <li data-task="e-pkgs" data-auto="term:command line~conda list code=0"><code>conda list</code> <button class="do showme" type="button" data-term="conda list">show me</button> – every package in it, with version, build and channel.</li>
+    <li data-task="e-which" data-auto="term:command line~bcftools --version code=0"><code>which bcftools</code> <button class="do showme" type="button" data-term="which bcftools">show me</button> then <code>bcftools --version | head -2</code> <button class="do showme" type="button" data-term="bcftools --version | head -2">show me</button></li>
+    <li data-task="e-py" data-auto="term:command line~pip list code=0">Python has its own package list: <code>python --version</code> <button class="do showme" type="button" data-term="python --version">show me</button> <code>pip list</code> <button class="do showme" type="button" data-term="pip list">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="e-hts" data-accept="1\.10" data-hint="the second line of bcftools --version">
+  <div class="q-text">Which version of the htslib library does <code>bcftools --version</code> say it uses – and which htslib version does <code>conda list</code> show?</div>
+  <div class="q-model"><p>bcftools says <b>htslib 1.10</b>, conda lists <b>htslib 1.17</b> (the one samtools uses). In this browser each program was compiled with its own built-in copies of its libraries (htslib, zlib), so bcftools always uses htslib 1.10 – and one environment can hold every program. On a real computer the programs in an environment share its <b>single</b> copy of each library – whichever version conda chose. Keep this in mind for the next activities.</p></div>
+</div>
+
+  <h2 id="e-colleague">6.2 The same pipeline on another computer</h2>
+  <p>A second run of this pipeline – the same rules, config and data, with the variant-calling steps in a conda environment – was made on a Linux computer with <code>snakemake --use-conda</code>. Its result is in <code>/data/course/colleague/</code>.</p>
+  <div class="activity">
+  <div class="act-t">Activity 6.2 · Spot the difference</div>
+  <ol class="steps">
+    <li data-task="e-readme" data-auto="term:command line~colleague/README code=0"><code>cat /data/course/colleague/README.md</code> <button class="do showme" type="button" data-term="cat /data/course/colleague/README.md">show me</button></li>
+    <li data-task="e-md5" data-auto="term:command line~colleague code=0 line~md5sum">Compare checksums: <code>bcftools view -H /data/course/colleague/NA12878.filtered.vcf.gz | md5sum</code> <button class="do showme" type="button" data-term="bcftools view -H /data/course/colleague/NA12878.filtered.vcf.gz | md5sum">show me</button> (yours was <code>09dd51431f385ed3863928eee0064125</code>).</li>
+    <li data-task="e-files" data-check="exists:~/compare/colleague.txt">Save both sets of records as text and compare them line by line – in a scratch folder outside the project, because nothing in <code>results/</code> is made by hand: <code>mkdir -p ~/compare &amp;&amp; bcftools view -H results/variants/NA12878.filtered.vcf.gz &gt; ~/compare/mine.txt</code> <button class="do showme" type="button" data-term="mkdir -p ~/compare &amp;&amp; bcftools view -H results/variants/NA12878.filtered.vcf.gz &gt; ~/compare/mine.txt">show me</button> <code>bcftools view -H /data/course/colleague/NA12878.filtered.vcf.gz &gt; ~/compare/colleague.txt</code> <button class="do showme" type="button" data-term="bcftools view -H /data/course/colleague/NA12878.filtered.vcf.gz &gt; ~/compare/colleague.txt">show me</button></li>
+    <li data-task="e-diff" data-auto="term:command line~diff code=0"><code>diff ~/compare/mine.txt ~/compare/colleague.txt | head -20</code> <button class="do showme" type="button" data-term="diff ~/compare/mine.txt ~/compare/colleague.txt | head -20">show me</button> – <code>&lt;</code> lines are yours, <code>&gt;</code> lines the colleague’s.</li>
+    <li data-task="e-cut" data-auto="term:command line~diff line~short">Just position, genotype and quality: <code>cut -f 1,2,6,10 ~/compare/mine.txt &gt; ~/compare/mine.short</code> <button class="do showme" type="button" data-term="cut -f 1,2,6,10 ~/compare/mine.txt &gt; ~/compare/mine.short">show me</button> <code>cut -f 1,2,6,10 ~/compare/colleague.txt &gt; ~/compare/colleague.short</code> <button class="do showme" type="button" data-term="cut -f 1,2,6,10 ~/compare/colleague.txt &gt; ~/compare/colleague.short">show me</button> <code>diff ~/compare/mine.short ~/compare/colleague.short</code> <button class="do showme" type="button" data-term="diff ~/compare/mine.short ~/compare/colleague.short">show me</button></li>
+    <li data-task="e-hdr" data-auto="term:command line~grep Version code=0">The VCF header records the software that made it: <code>bcftools view -h /data/course/colleague/NA12878.filtered.vcf.gz | grep Version</code> <button class="do showme" type="button" data-term="bcftools view -h /data/course/colleague/NA12878.filtered.vcf.gz | grep Version">show me</button> <code>bcftools view -h results/variants/NA12878.filtered.vcf.gz | grep Version</code> <button class="do showme" type="button" data-term="bcftools view -h results/variants/NA12878.filtered.vcf.gz | grep Version">show me</button></li>
+    <li data-task="e-env" data-auto="term:command line~calling-environment code=0">And the colleague’s environment: <code>grep -E &#x27;bcftools|htslib&#x27; /data/course/colleague/calling-environment.yml</code> <button class="do showme" type="button" data-term="grep -E &#x27;bcftools|htslib&#x27; /data/course/colleague/calling-environment.yml">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="e-same">
+  <div class="q-text">What is the same in the two runs, and what differs? What caused the difference?</div>
+  <div class="q-model"><p><b>The same:</b> all 15 variant sites, their alleles and their genotypes. <b>Different:</b> the QUAL of three calls (e.g. <code>human_CYP2C9</code> 23059: 111 in yours, 132 in theirs; 1402: 50 vs 56; 20827: 167 vs 165), the genotype likelihoods (PL) of several calls, and statistics in INFO such as DP4. <b>Cause:</b> the software. The colleague’s environment file asked for <code>bcftools=1.10</code>, which conda read as “any 1.10.x” and resolved to <b>bcftools 1.10.2</b> – a build from 2020 – installed with <b>htslib 1.21</b>; yours is bcftools 1.10 with htslib 1.10. The <code>##bcftoolsVersion</code> header lines record the htslib each run actually used. Same code, same data, different environment – different numbers.</p></div>
+</div>
+  <div class="activity">
+  <div class="act-t">Activity 6.3 · Does it matter?</div>
+  <ol class="steps">
+    <li data-task="e-120" data-auto="smk:run argv~min_qual=120 ok=true">Imagine a stricter filter, <code>QUAL&gt;=120</code>. Count what each run keeps – yours, by changing the setting on the command line: <code>snakemake --cores 1 --config min_qual=120</code> <button class="do showme" type="button" data-term="snakemake --cores 1 --config min_qual=120">show me</button> <code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | wc -l</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | wc -l">show me</button></li>
+    <li data-task="e-120c" data-auto="term:command line~QUAL&gt;=120 code=0">…and the colleague’s: <code>bcftools filter -i &#x27;QUAL&gt;=120&#x27; /data/course/colleague/NA12878.filtered.vcf.gz | bcftools view -H | wc -l</code> <button class="do showme" type="button" data-term="bcftools filter -i &#x27;QUAL&gt;=120&#x27; /data/course/colleague/NA12878.filtered.vcf.gz | bcftools view -H | wc -l">show me</button></li>
+    <li data-task="e-back" data-auto="smk:run argv~--cores ok=true">Go back to the settings in the config file: <code>snakemake --cores 1</code> <button class="do showme" type="button" data-term="snakemake --cores 1">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="e-120q" data-accept="6.*7|7.*6" data-hint="two numbers: yours and the colleague’s">
+  <div class="q-text">How many variants does each run keep with <code>QUAL&gt;=120</code>?</div>
+  <div class="q-model"><p><b>6 in yours, 7 in the colleague’s</b>: the call at <code>human_CYP2C9</code> 23059 has QUAL 111 in one run and 132 in the other. A version difference that looks harmless can change which variants are reported.</p></div>
+</div>
+
+  <h2 id="e-one">6.3 One environment for everything?</h2>
+  <div class="activity">
+  <div class="act-t">Activity 6.4 · Ask the assistant</div>
+  <ol class="steps">
+    <li data-task="e-aione" data-auto="conda:create ok=false name=cyp2c19-pipeline"><button class="do ai" type="button" data-ai="env:one">Ask for a conda environment file for the whole pipeline</button> Press <b>Save as</b>, then build it: <code>conda env create -f workflow/envs/pipeline.yaml</code> <button class="do showme" type="button" data-term="conda env create -f workflow/envs/pipeline.yaml">show me</button> Read the whole message.</li>
+    <li data-task="e-aizlib" data-auto="ai:answer entry=env:zlib">Press <b>✦ Ask the AI assistant about this error</b> under the message.</li>
+    <li data-task="e-aisame" data-auto="ai:answer entry=env:same">Ask its follow-up question: <b>without Python, would that environment give exactly the same bcftools and htslib as your pipeline?</b> Compare with the colleague’s environment.</li>
+    <li data-task="e-exact" data-auto="conda:create ok=false name=exact">Try to pin bcftools <b>and</b> its library exactly, in one environment with samtools: <code>conda create -n exact samtools=1.17 bcftools==1.10 htslib==1.10</code> <button class="do showme" type="button" data-term="conda create -n exact samtools=1.17 bcftools==1.10 htslib==1.10">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="e-conflictq">
+  <div class="q-text">The assistant called its single environment “fully reproducible”. What was wrong with it – and why does pinning bcftools and htslib exactly in one environment not help either?</div>
+  <div class="q-model"><p><b>It could not even be built.</b> The bioconda builds of minimap2 2.22, samtools 1.17 and bcftools 1.10 were made against zlib 1.2 and need zlib older than 1.3, while Python 3.13 needs zlib 1.3.1 or newer – and an environment holds only one version of each library, so conda refuses (<i>LibMambaUnsatisfiableError</i>).</p>
+  <p><b>Without Python its pins are loose:</b> <code>bcftools=1.10</code> installs the newest 1.10.x (1.10.2), htslib is not mentioned so the solver picks the newest one that fits (1.21 today), and pandas and matplotlib have no version at all – exactly the colleague’s environment, with its different QUAL values.</p>
+  <p><b>Exact pins conflict too:</b> <code>htslib==1.10</code> for bcftools rules out samtools 1.17, which needs htslib 1.17 or newer. One environment for everything is fragile; pipelines give each step its own small, exactly pinned environment.</p></div>
+</div>
+
+  <h2 id="e-rules">6.4 One environment per rule</h2>
+  <p>Create three environment files. The tools and their htslib are pinned exactly (<code>==</code>) – the lesson of the colleague’s run. For the Python step, minor versions are enough here; <code>conda env export</code> records the exact ones (6.5).</p>
+  <div class="codefile" data-path="workflow/envs/mapping.yaml"><div class="cf-head"><span class="cf-name">workflow/envs/mapping.yaml</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/envs/mapping.yaml">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - minimap2==2.22
+  - samtools==1.17
+  - htslib==1.17</pre></div>
+  <div class="codefile" data-path="workflow/envs/calling.yaml"><div class="cf-head"><span class="cf-name">workflow/envs/calling.yaml</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/envs/calling.yaml">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bcftools==1.10
+  - htslib==1.10</pre></div>
+  <div class="codefile" data-path="workflow/envs/python.yaml"><div class="cf-head"><span class="cf-name">workflow/envs/python.yaml</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/envs/python.yaml">Create this file</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pandas=2.3
+  - matplotlib=3.9</pre><div class="cf-note">In this browser, Python and its packages come from Pyodide (Python 3.13, pandas 2.3, matplotlib 3.8): Snakemake says so when it builds this environment. The file is written for a real computer, where matplotlib 3.9 is the first version available for Python 3.13.</div></div>
+  <p>Then give every rule a <code>conda:</code> line with its environment (the path is relative to the Snakefile): <code>envs/mapping.yaml</code> for <code>map_reads</code>, <code>index_bam</code> and <code>flagstat</code>; <code>envs/calling.yaml</code> for <code>call_variants</code> and <code>filter_variants</code>; <code>envs/python.yaml</code> for <code>summarise</code>. Put the <code>conda:</code> line <b>above</b> <code>shell:</code> or <code>script:</code> – Snakemake allows nothing after them. For example:</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">rule call_variants:
+    input:
+        ...
+    output:
+        ...
+    log:
+        ...
+    conda:
+        &quot;envs/calling.yaml&quot;
+    shell:
+        ...</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 6.5 · Environments in the Snakefile</div>
+  <ol class="steps">
+    <li data-task="e-rmone" data-auto="term:command line~rm line~pipeline.yaml code=0">The assistant’s environment file cannot be built – delete it, so that nobody mistakes it for part of the pipeline: <code>rm workflow/envs/pipeline.yaml</code> <button class="do showme" type="button" data-term="rm workflow/envs/pipeline.yaml">show me</button></li>
+    <li data-task="e-envfiles" data-check="exists:workflow/envs/python.yaml">Create the three environment files (buttons above).</li>
+    <li data-task="e-conda" data-check="has:workflow/Snakefile|envs/python\.yaml">Add a <code>conda:</code> line to each of the six rules, and save.</li>
+    <li data-task="e-use" data-auto="smk:run argv~--use-conda ok=true">Run with the environments: <code>snakemake --cores 1 --use-conda</code> <button class="do showme" type="button" data-term="snakemake --cores 1 --use-conda">show me</button>. Snakemake builds each environment once (in <code>.snakemake/conda/</code>). What reason does it give for re-running the jobs?</li>
+    <li data-task="e-pinmd5" data-auto="term:command line~md5sum code=0 line~filtered">Still the same result? <code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="e-pins">
+  <div class="q-text">What is the difference between <code>bcftools=1.10</code> and <code>bcftools==1.10</code>, and why pin <code>htslib</code> as well?</div>
+  <div class="q-model"><p><code>bcftools=1.10</code> means “any version starting with 1.10” – 1.10, 1.10.1 or 1.10.2 – and conda picks the newest, together with whatever htslib that build needs; <code>bcftools==1.10</code> means exactly 1.10. The numbers come from the library as much as from bcftools itself, and the dependency ranges of old packages are sometimes widened later – which is how a 2020 build of bcftools came to be installed with htslib 1.21 – so pinning <code>htslib==1.10</code> too fixes the part that actually changed the colleague’s results. The most exact records are a lock file of the package files (<code>conda list --explicit --md5</code>; Snakemake uses one saved as <code>envs/calling.linux-64.pin.txt</code>) or a container image; <code>conda env export</code> lists every package with version and build.</p></div>
+</div>
+  <div class="callout warn">
+  <div class="co-t">Always the same way</div>
+  <p>Once your rules have <code>conda:</code> environments, run the pipeline with <code>--use-conda</code> every time. Without it, Snakemake notices that the software would not be the one recorded for your results (<i>Software environment definition has changed</i>) and wants to re-run everything – the provenance record at work.</p>
+</div>
+
+  <h2 id="e-record">6.5 Record the environment</h2>
+  <div class="activity">
+  <div class="act-t">Activity 6.6 · Records</div>
+  <ol class="steps">
+    <li data-task="e-mkcalling" data-auto="conda:create ok=true name=calling">Make the calling environment as a named environment: <code>conda env create -n calling -f workflow/envs/calling.yaml</code> <button class="do showme" type="button" data-term="conda env create -n calling -f workflow/envs/calling.yaml">show me</button></li>
+    <li data-task="e-export" data-auto="conda:export name=calling">The packages you asked for: <code>conda env export -n calling --from-history</code> <button class="do showme" type="button" data-term="conda env export -n calling --from-history">show me</button>; every package, version and build: <code>conda env export -n calling</code> <button class="do showme" type="button" data-term="conda env export -n calling">show me</button> (on a real computer this lists about thirty packages: every library bcftools needs).</li>
+    <li data-task="e-freeze" data-auto="term:command line~pip freeze code=0">Python packages in the format of a <code>requirements.txt</code> file: <code>pip freeze</code> <button class="do showme" type="button" data-term="pip freeze">show me</button></li>
+    <li data-task="e-summary" data-auto="smk:run argv~--summary ok=true">Snakemake’s own record of every result – which rule made it, when, from which inputs, with which command: <code>snakemake --summary --use-conda</code> <button class="do showme" type="button" data-term="snakemake --summary --use-conda">show me</button> and <code>snakemake -D --use-conda | head -4</code> <button class="do showme" type="button" data-term="snakemake -D --use-conda | head -4">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="e-best" data-type="mcq">
+  <div class="q-text">A reader wants the <i>exact</i> software you used, years from now. Which record helps most?</div>
+  <div class="mcq"><label data-why="They allow many different builds – the colleague’s run shows what that does."><input type="radio"> the environment files with loose pins (<code>bcftools=1.10</code>)</label><label data-correct data-why="An exact list of what was installed – or a frozen image of it – can recreate the environment."><input type="radio"> <code>conda env export</code> (every package with version and build), a lock file, or a container image</label><label data-why="Better than nothing, but they miss the libraries and builds."><input type="radio"> the version numbers in the README</label></div>
+</div>
+  <button class="do ai" type="button" data-ai="env:record">Ask the assistant how to record software versions</button> <button class="do ai" type="button" data-ai="env:container">Ask about containers</button>
+  <p class="small">Your finished Snakefile – for comparison, or to replace yours if it will not work:</p>
+  <div class="codefile" data-path="workflow/Snakefile"><div class="cf-head"><span class="cf-name">workflow/Snakefile</span><span class="grow"></span><button class="do" type="button" data-file-create="workflow/Snakefile">Replace my Snakefile with this</button><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock"># =====================================================================
+#  Variant calling for CYP2C19 / CYP2C9 – a reproducible pipeline
+#  Run from the project folder:   snakemake --cores 1 --use-conda
+# =====================================================================
+
+configfile: &quot;config/config.yaml&quot;
+
+SAMPLES = config[&quot;samples&quot;]
+REF = config[&quot;reference&quot;]
+
+
+# the target rule: the files we want at the end
+rule all:
+    input:
+        expand(&quot;results/variants/{sample}.filtered.vcf.gz&quot;, sample=SAMPLES),
+        expand(&quot;results/qc/{sample}.flagstat.txt&quot;, sample=SAMPLES),
+        &quot;results/report/variant_summary.tsv&quot;,
+
+
+# 1. align the reads to the reference and sort the alignments
+rule map_reads:
+    input:
+        ref=REF,
+        r1=&quot;data/raw/{sample}_R1.fastq&quot;,
+        r2=&quot;data/raw/{sample}_R2.fastq&quot;,
+    output:
+        &quot;results/mapped/{sample}.sorted.bam&quot;,
+    log:
+        &quot;logs/map_reads/{sample}.log&quot;,
+    threads: 1
+    conda:
+        &quot;envs/mapping.yaml&quot;
+    shell:
+        &quot;minimap2 -ax sr -t {threads} -R &#x27;@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}&#x27; &quot;
+        &quot;{input.ref} {input.r1} {input.r2} 2&gt; {log} &quot;
+        &quot;| samtools sort -o {output} - 2&gt;&gt; {log}&quot;
+
+
+# 2. index the sorted BAM file
+rule index_bam:
+    input:
+        &quot;results/mapped/{sample}.sorted.bam&quot;,
+    output:
+        &quot;results/mapped/{sample}.sorted.bam.bai&quot;,
+    conda:
+        &quot;envs/mapping.yaml&quot;
+    shell:
+        &quot;samtools index {input}&quot;
+
+
+# 3. mapping statistics
+rule flagstat:
+    input:
+        &quot;results/mapped/{sample}.sorted.bam&quot;,
+    output:
+        &quot;results/qc/{sample}.flagstat.txt&quot;,
+    conda:
+        &quot;envs/mapping.yaml&quot;
+    shell:
+        &quot;samtools flagstat {input} &gt; {output}&quot;
+
+
+# 4. call variants
+rule call_variants:
+    input:
+        ref=REF,
+        bam=&quot;results/mapped/{sample}.sorted.bam&quot;,
+        bai=&quot;results/mapped/{sample}.sorted.bam.bai&quot;,
+    output:
+        &quot;results/variants/{sample}.raw.vcf.gz&quot;,
+    log:
+        &quot;logs/call_variants/{sample}.log&quot;,
+    conda:
+        &quot;envs/calling.yaml&quot;
+    shell:
+        &quot;bcftools mpileup -f {input.ref} {input.bam} -Ou 2&gt; {log} &quot;
+        &quot;| bcftools call -mv -Oz -o {output} 2&gt;&gt; {log}&quot;
+
+
+# 5. keep good-quality calls
+rule filter_variants:
+    input:
+        &quot;results/variants/{sample}.raw.vcf.gz&quot;,
+    output:
+        &quot;results/variants/{sample}.filtered.vcf.gz&quot;,
+    params:
+        min_qual=config[&quot;min_qual&quot;],
+        min_depth=config[&quot;min_depth&quot;],
+    conda:
+        &quot;envs/calling.yaml&quot;
+    shell:
+        &quot;bcftools filter -i &#x27;QUAL&gt;={params.min_qual} &amp;&amp; INFO/DP&gt;={params.min_depth}&#x27; &quot;
+        &quot;-Oz -o {output} {input}&quot;
+
+
+# 6. a table and a plot, made by a Python script
+rule summarise:
+    input:
+        expand(&quot;results/variants/{sample}.filtered.vcf.gz&quot;, sample=SAMPLES),
+    output:
+        table=&quot;results/report/variant_summary.tsv&quot;,
+        plot=&quot;results/report/variant_quality.png&quot;,
+    conda:
+        &quot;envs/python.yaml&quot;
+    script:
+        &quot;scripts/summarise_variants.py&quot;</pre></div>
+
+</section>
+
+<section class="chapter" id="galaxy" data-num="7" data-title="The same pipeline in Galaxy" data-bench="galaxy" hidden>
+  <h1>The same pipeline in Galaxy</h1>
+  <div class="meta-row"><span class="pill time">≈ 40 min</span></div>
+  <p class="lede">Galaxy runs pipelines without programming: tools in forms, a history of every dataset, and workflows you build by drawing connections. Build yours – and compare the result with Snakemake’s.</p>
+
+  <div class="callout lecture">
+  <div class="co-t">A graphical workflow engine</div>
+  <p>Galaxy (usegalaxy.org, usegalaxy.eu and many institutional servers) runs bioinformatics tools through web forms, keeps every dataset in a <b>history</b> with a full record of how it was made, and lets you build <b>workflows</b> by connecting tools on a canvas. It was started in 2005 at Penn State by James Taylor and Anton Nekrutenko. In James Taylor’s words, quoted in the lecture: <i>“Good ideas don’t have owners – they belong to everyone.”</i></p>
+  <p class="small muted">The Galaxy tab is a practice server that works like Galaxy and runs the same WebAssembly programs as your terminal and your Snakefile.</p>
+</div>
+
+  <h2 id="x-data">7.1 Data into a history</h2>
+  <div class="activity">
+  <div class="act-t">Activity 7.1 · Upload</div>
+  <ol class="steps">
+    <li data-task="x-open" data-auto="app:bench name=galaxy">Open the Galaxy tab. <button class="do showme" type="button" data-bench="galaxy">open Galaxy</button> Tools are on the left, your history on the right.</li>
+    <li data-task="x-up" data-check="gxUploads:3">Press <b>Upload Data</b> (top left), tick <code>SRR098401_1.fastq</code>, <code>SRR098401_2.fastq</code> and <code>hg19_CYP2C_slices.fa</code> (or your copies in <code>data/raw/</code>), and press <b>Start</b>. Galaxy detects the format of each file (<i>fastqsanger</i>, <i>fasta</i>).</li>
+    <li data-task="x-peek" data-auto="gx:view">Click the name of a dataset in the history to expand it; the <b>eye</b> shows its contents.</li>
+  </ol>
+</div>
+  <p class="small muted">This practice server keeps your history only while the page is open (your workflows are saved). A real Galaxy server keeps every history until you delete it.</p>
+
+  <h2 id="x-tool">7.2 One tool, by hand</h2>
+  <div class="activity">
+  <div class="act-t">Activity 7.2 · Map with minimap2</div>
+  <ol class="steps">
+    <li data-task="x-form" data-auto="gx:toolform tool=minimap2">Click <b>Map with minimap2</b> in the tool panel.</li>
+    <li data-task="x-run" data-auto="gx:job tool=minimap2 state=ok">Check the inputs – the reference, the forward reads (<code>_1</code>) and the reverse reads (<code>_2</code>) – and the preset (<code>sr</code>), then press <b>Run tool</b>. Watch the new dataset: grey = queued, yellow = running, green = done.</li>
+    <li data-task="x-info" data-auto="gx:details tool=minimap2">Expand the new BAM dataset and click its <b>ⓘ</b> (dataset details). Scroll through: tool ID and version, dependencies, command line, parameters.</li>
+  </ol>
+</div>
+  <div class="q" data-q="x-cmd">
+  <div class="q-text">Compare Galaxy’s command line with your <code>map_reads</code> rule. What is the same? What did Galaxy add, and what does it record for every dataset?</div>
+  <div class="q-model"><p>The same programs and options: <code>minimap2 -x sr -a</code> with a read group, piped into <code>samtools sort</code>. Galaxy first <b>links</b> the history datasets into a job working folder under simple names (<code>ln -s … input_f.fastq</code>), writes to <code>output.bam</code> and moves the result into its dataset store; it also indexes BAM datasets itself. For every dataset it records the <b>tool ID and version</b> (<code>…/iuc/minimap2/minimap2/2.22+galaxy0</code>), the <b>dependencies</b> with versions (minimap2 2.22, samtools 1.17), every <b>parameter</b>, the <b>input datasets</b> and the exact <b>command line</b> – provenance, automatically, without the user writing anything down.</p></div>
+</div>
+
+  <h2 id="x-build">7.3 Build the workflow</h2>
+  <p>Now draw the whole pipeline. Each box is a step; each connection carries a dataset from an <b>output</b> (dot on the right of a box) to an <b>input</b> (dot on the left). Only matching data types can be connected.</p>
+  <div class="activity">
+  <div class="act-t">Activity 7.3 · The workflow editor</div>
+  <ol class="steps">
+    <li data-task="x-new" data-auto="gx:editor">Click <b>Workflows</b> (top bar of the Galaxy tab), then <b>Create a new workflow</b>.</li>
+    <li data-task="x-inputs" data-check="gxWf:inputs">Press <b>+ Input dataset</b> three times. Click each box to set its <b>label</b> (forward reads, reverse reads, reference) and <b>format</b> (fastqsanger for the reads, fasta for the reference).</li>
+    <li data-task="x-tools" data-check="gxWf:tools">With the editor open, click these tools in the tool panel to add them: <b>Map with minimap2</b>, <b>Samtools flagstat</b>, <b>bcftools mpileup</b>, <b>bcftools call</b>, <b>bcftools filter</b>.</li>
+    <li data-task="x-bad" data-auto="gx:badwire">Try a wrong connection: drag from the <b>forward reads</b> output to the <b>reference</b> input of bcftools mpileup. What happens?</li>
+    <li data-task="x-wire" data-check="gxWf:wired">Now connect everything correctly: the three inputs into minimap2; minimap2’s BAM into flagstat and into mpileup (and the reference into mpileup); mpileup into call; call into filter. Click an empty part of the canvas: the <b>Checks</b> panel on the right says when every input is connected. (<b>Tidy layout</b> arranges the boxes.)</li>
+    <li data-task="x-param" data-auto="gx:step tool=bcftools_filter">Click the <b>bcftools filter</b> box and check its expression: <code>QUAL&gt;=20 &amp;&amp; INFO/DP&gt;=5</code> – the same as <code>min_qual</code> and <code>min_depth</code> in your config file.</li>
+  </ol>
+</div>
+  <div class="q" data-q="x-types">
+  <div class="q-text">Why did Galaxy refuse the first connection? How does that help you?</div>
+  <div class="q-model"><p>Every dataset has a <b>datatype</b> and every tool input accepts only some: mpileup’s reference input needs <i>fasta</i>, and the reads are <i>fastqsanger</i>. The editor checks while you build, so mistakes surface immediately rather than as a failed (or silently wrong) job later. On the command line and in a Snakefile nothing checks file types for you – you find out from an error message, or from strange results.</p></div>
+</div>
+
+  <h2 id="x-run">7.4 Run it – and compare with Snakemake</h2>
+  <div class="activity">
+  <div class="act-t">Activity 7.4 · One click, five jobs</div>
+  <ol class="steps">
+    <li data-task="x-go" data-auto="gx:invoked">Press <b>Run</b> (in the editor). Check that each input has the right dataset, then press <b>Run workflow</b>.</li>
+    <li data-task="x-done" data-auto="gx:invocation ok=true">Watch the jobs finish in the history and on the invocation page (about 15 seconds).</li>
+    <li data-task="x-copy" data-auto="gx:copy tool=bcftools_filter">On the history dataset made by <b>bcftools filter</b>, click <b>copy to my files</b>. It is copied into <code>~/galaxy/</code>.</li>
+    <li data-task="x-md5" data-auto="term:command line~galaxy code=0 line~md5sum">In the terminal: <code>ls ~/galaxy</code> <button class="do showme" type="button" data-term="ls ~/galaxy">show me</button> then compare the checksum of its records with your Snakemake result: <code>bcftools view -H ~/galaxy/*filter*.vcf.gz | md5sum</code> <button class="do showme" type="button" data-term="bcftools view -H ~/galaxy/*filter*.vcf.gz | md5sum">show me</button> <span class="small muted">(if you ran bcftools filter more than once, use the full name of one file – press <kbd>Tab</kbd> to complete it)</span></li>
+  </ol>
+</div>
+  <div class="q" data-q="x-same" data-accept="^(?![\s\S]*\b(not|no|different|differs?)\b)[\s\S]*\b(yes|same|identical)\b||09dd5143" data-hint="compare the two md5sums">
+  <div class="q-text">Is Galaxy’s result the same as Snakemake’s? Why?</div>
+  <div class="q-model"><p><b>Yes</b> – the variant records have the same checksum, <code>09dd51431f385ed3863928eee0064125</code>. Two very different engines – one written as code, one drawn on a canvas – ran the same programs, in the same versions, with the same parameters, on the same data. The result depends on data, software and settings, not on the engine. (Galaxy’s VCF <i>files</i> differ from yours in their headers, which record dates and file names – the reason we compare the records.)</p></div>
+</div>
+
+  <h2 id="x-share">7.5 Extract and share</h2>
+  <div class="activity">
+  <div class="act-t">Activity 7.5 · A workflow from the history</div>
+  <ol class="steps">
+    <li data-task="x-extract" data-auto="gx:extract">In the history, press <b>Extract workflow</b>. Galaxy turns the jobs in your history into a workflow. Compare it with the one you drew – what is different?</li>
+    <li data-task="x-ga" data-auto="gx:export">On the <b>Workflows</b> page, save your workflow into your project with <b>to project</b> (it becomes <code>workflow/galaxy/….ga</code>), or download it with <b>.ga</b>. Open the <code>.ga</code> file in the Files tab: it is JSON text describing every step.</li>
+  </ol>
+</div>
+  <div class="q" data-q="x-rerun">
+  <div class="q-text">What would a colleague need to re-run your Galaxy workflow and get the same result?</div>
+  <div class="q-model"><p>The <b>.ga file</b> (it lists every tool by Tool Shed ID and version, every parameter and every connection), a <b>Galaxy server with those tool versions</b> installed, and the <b>same input data</b>, uploaded with the right datatypes. A shared history adds the full record of each dataset. The weak point is the server: re-running depends on a server that still offers those exact tool versions. (The extracted workflow also contains any extra jobs you ran – here the separate minimap2 run – so check it before sharing.)</p></div>
+</div>
+  <button class="do ai" type="button" data-ai="gx:share">Ask the assistant how others re-run a Galaxy workflow</button>
+
+</section>
+
+<section class="chapter" id="agent" data-num="8" data-title="An AI agent" data-bench="assistant" hidden>
+  <h1>An AI agent: results without provenance</h1>
+  <div class="meta-row"><span class="pill time">≈ 30 min</span></div>
+  <p class="lede">An AI agent can do the whole analysis for you and hand you a file. Convenient – but can you check how it was made?</p>
+
+  <div class="callout warn">
+  <div class="co-t">Before you start</div>
+  <p>The agent in this practical is a <b>scripted simulation</b>: it does not run any analysis. It was written to show, in miniature, problems people meet with AI tools – confident answers that are not based on your data, invented details, and answers that change when you ask again. Your job is to find out what its result is worth <b>from the evidence alone</b>, as if it were real. Real agents can run tools – and when they do, the same questions apply: which tool, which version, which data, and where is the record?</p>
+</div>
+
+  <h2 id="a-task">8.1 Give the agent the job</h2>
+  <div class="activity">
+  <div class="act-t">Activity 8.1 · Delegate</div>
+  <ol class="steps">
+    <li data-task="a-open" data-auto="ai:tab tab=agent">Open the AI assistant and choose the <b>Agent</b> tab. <button class="do showme" type="button" data-bench="assistant">open the assistant</button></li>
+    <li data-task="a-call" data-auto="agent:file run=run1">Give it the task <b>“Call the variants for NA12878 from my reads and give me a VCF file”</b> (the first suggestion under the box). Read what it says it did, and what it concludes.</li>
+  </ol>
+</div>
+  <div class="q" data-q="a-trust">
+  <div class="q-text">Before you look at the file: what would you need to know to trust this result?</div>
+  <div class="q-model"><p>Which data it used (your reads? which reference?), which programs and versions, which parameters and filters, what happened at each step (logs), and ideally a way to re-run it and get the same file. In short: its provenance – the same things your Snakefile and Galaxy history record.</p></div>
+</div>
+
+  <h2 id="a-check">8.2 Check the file</h2>
+  <div class="activity">
+  <div class="act-t">Activity 8.2 · Evidence</div>
+  <ol class="steps">
+    <li data-task="a-head" data-auto="term:command line~ai-agent code=0">The records: <code>grep -v &#x27;^##&#x27; ~/ai-agent/NA12878_variants.vcf | head -5</code> <button class="do showme" type="button" data-term="grep -v &#x27;^##&#x27; ~/ai-agent/NA12878_variants.vcf | head -5">show me</button></li>
+    <li data-task="a-hdr" data-auto="term:command line~GATKCommandLine code=0">Which software and reference does the file’s header name? <code>grep -E &#x27;^##(source|reference|contig|GATKCommandLine)&#x27; ~/ai-agent/NA12878_variants.vcf</code> <button class="do showme" type="button" data-term="grep -E &#x27;^##(source|reference|contig|GATKCommandLine)&#x27; ~/ai-agent/NA12878_variants.vcf">show me</button></li>
+    <li data-task="a-gatk" data-auto="term:command line~gatk">Is that software available to you at all? <code>type gatk bwa</code> <button class="do showme" type="button" data-term="type gatk bwa">show me</button> <code>conda list | grep -i gatk</code> <button class="do showme" type="button" data-term="conda list | grep -i gatk">show me</button></li>
+    <li data-task="a-star2" data-auto="term:command line~rs4244285 code=0"><i>CYP2C19*2</i> (rs4244285) is at hg19 chr10:96,541,616 – position 11,616 of your <code>human_CYP2C19</code> slice. Your pipeline’s call: <code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | grep -w 11616</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | grep -w 11616">show me</button> The agent’s: <code>grep rs4244285 ~/ai-agent/NA12878_variants.vcf</code> <button class="do showme" type="button" data-term="grep rs4244285 ~/ai-agent/NA12878_variants.vcf">show me</button></li>
+    <li data-task="a-17" data-auto="term:command line~provenance.json code=0">The agent also reports <i>CYP2C19*17</i> (rs12248560, GRCh38 chr10:94,761,900 = hg19 chr10:96,521,657). Look up the region your reads come from: <code>grep -A2 human_CYP2C19 /data/course/provenance.json | head -8</code> <button class="do showme" type="button" data-term="grep -A2 human_CYP2C19 /data/course/provenance.json | head -8">show me</button></li>
+  </ol>
+</div>
+  <div class="q" data-q="a-evidence">
+  <div class="q-text">List at least three pieces of evidence that the agent’s file was not made from your reads with your reference.</div>
+  <div class="q-model"><ul>
+  <li>The positions are on <b>GRCh38</b> <code>chr10</code> (header: <code>Homo_sapiens_assembly38.fasta</code>, contig length 133,797,422) – you gave it hg19 slices called <code>human_CYP2C19</code> and <code>human_CYP2C9</code>.</li>
+  <li>The header names <b>GATK HaplotypeCaller 4.5.0.0</b> – not installed anywhere in your environment.</li>
+  <li>It calls <b>rs4244285 homozygous (1/1)</b> with all 104 reads showing A (<code>AD 0,104</code>), but your reads show both alleles: DP4 <code>40,4,46,2</code> – about 44 high-quality reference bases and 48 alternative ones, a heterozygote (0/1).</li>
+  <li>It reports <b>rs12248560</b> at GRCh38 chr10:94,761,900 – that is hg19 96,521,657, <b>outside</b> the region the reads were collected from (96,530,001–96,560,000): there are no reads there to call anything from.</li>
+</ul></div>
+</div>
+  <p class="small muted">The position of rs4244285 on GRCh38 (chr10:94,781,859) and hg19 (chr10:96,541,616) can be checked in <a href="https://www.ncbi.nlm.nih.gov/clinvar/variation/16897/" target="_blank" rel="noopener">ClinVar</a>; rs12248560 in <a href="https://www.ncbi.nlm.nih.gov/clinvar/variation/39357/" target="_blank" rel="noopener">ClinVar</a> too.</p>
+
+  <h2 id="a-again">8.3 Ask again – and ask for proof</h2>
+  <div class="activity">
+  <div class="act-t">Activity 8.3 · Reproducible?</div>
+  <ol class="steps">
+    <li data-task="a-again" data-auto="agent:file run=run2">Ask the agent to <b>run the analysis again</b>. Read its new conclusion.</li>
+    <li data-task="a-diff" data-auto="term:command line~ai-agent code=0 line~md5sum"><code>md5sum ~/ai-agent/*.vcf</code> <button class="do showme" type="button" data-term="md5sum ~/ai-agent/*.vcf">show me</button> <code>grep rs4244285 ~/ai-agent/*.vcf</code> <button class="do showme" type="button" data-term="grep rs4244285 ~/ai-agent/*.vcf">show me</button></li>
+    <li data-task="a-how" data-auto="agent:answer entry=ag:how">Ask it <b>which exact commands and software versions</b> it used. Compare the answer with the two file headers.</li>
+    <li data-task="a-proof" data-auto="agent:answer entry=ag:proof">Ask it to <b>show the log files and the BAM file</b>.</li>
+    <li data-task="a-real" data-auto="agent:answer entry=ag:real">Finally ask: <b>did you actually run these tools on my reads?</b></li>
+  </ol>
+</div>
+  <div class="q" data-q="a-once">
+  <div class="q-text">The two runs disagree (1/1 and 0/1 for rs4244285, “poor” and “intermediate” metaboliser). What would you have concluded if you had asked only once – and how could you have known which run to believe?</div>
+  <div class="q-model"><p>You would have reported whichever answer you happened to get – and with a single run nothing looks wrong. From the agent’s output alone there was no way to decide between them: no record of the inputs, programs, versions or parameters, no logs, no intermediate files, and no way to re-run the same process. Only your own reads (8.2) could settle it. Its excuse – that variant calling is “stochastic” – does not hold either: a genotype changing from 1/1 to 0/1 at about 100 reads is not a small difference, and your pinned pipeline gave the same checksum in the browser, in Galaxy and on another computer. Only an analysis you can re-run, and that gives the same answer when you do, can be checked.</p></div>
+</div>
+  <div class="q" data-q="a-story">
+  <div class="q-text">When asked, the agent listed commands and versions. Why is that not provenance?</div>
+  <div class="q-model"><p>It is a <b>story told afterwards</b>, not a <b>record made while running</b>. Nothing links it to the file: it contradicts the second run (BWA-MEM2 2.2.1 and GATK 4.4.0.0), names files that do not exist (the BAM, the logs – “no longer available”), and in the end the agent admits it did not run anything. Provenance has to be produced by the process itself – like Snakemake’s metadata or Galaxy’s job records – and be checkable, for example by re-running.</p></div>
+</div>
+
+  <h2 id="a-glass">8.4 An agent that works in the open</h2>
+  <p>AI agents <i>can</i> be useful here – if they work through your pipeline, where every step leaves a record. (Agents that really run tools usually show the commands they ran; that transcript is part of the provenance, but only part: it does not record the software versions or prove which files were used. A pipeline does.)</p>
+  <div class="activity">
+  <div class="act-t">Activity 8.4 · A glass box</div>
+  <ol class="steps">
+    <li data-task="a-pipe" data-auto="agent:glassbox ok=true">Give the agent the task <b>“Run my Snakemake pipeline for me and tell me what you did”</b>. Then look at the <b>Terminal</b>: its commands are there, with their complete output.</li>
+  </ol>
+</div>
+  <div class="q" data-q="a-claerbout">
+  <div class="q-text">In Claerbout’s terms, what is the difference between what the two agents gave you?</div>
+  <div class="q-model"><p>The first agent gave you <b>advertising</b>: a file and a confident story, with no code, data record or environment behind it – nothing that can be inspected or re-run. The second ran <b>your</b> pipeline, so the <b>scholarship</b> exists: the Snakefile, the config, the environment files, the data with checksums, and Snakemake’s record of every job – visible in your terminal and in <code>.snakemake/metadata</code>. It does not matter who (or what) typed the commands, as long as the record is made by the process and can be checked.</p></div>
+</div>
+  <div class="callout info">
+  <div class="co-t">Using AI in an analysis</div>
+  <ul>
+    <li>Use AI to <b>write and explain code</b> you can read, run, test and keep – a Snakefile rule, a script – not to produce results you cannot check.</li>
+    <li>Never accept a result without <b>provenance</b>: which data, which software and version, which parameters – recorded by the process, not described afterwards.</li>
+    <li><b>Check</b> AI output: run it, read the errors, look at file headers, compare checksums with a trusted run.</li>
+    <li><b>Say</b> where AI was used (tool, version, for what) in your methods or README.</li>
+    <li>Never paste <b>personal or patient data</b> into an AI tool.</li>
+  </ul>
+</div>
+  <div class="optional">
+    <h3>Clean up <span class="pill ext">Tidy</span></h3>
+    <p>The agent’s files should not be mistaken for results later: <code>rm -r ~/ai-agent</code> <button class="do showme" type="button" data-term="rm -r ~/ai-agent">show me</button></p>
+  </div>
+
+</section>
+
+<section class="chapter" id="compare" data-num="9" data-title="Which is best?" data-bench="terminal" hidden>
+  <h1>Burn, build – and which is best?</h1>
+  <div class="meta-row"><span class="pill time">≈ 30 min</span></div>
+  <p class="lede">Put your pipeline through Claerbout’s test, compare four ways of running an analysis, and take your reproducible project with you.</p>
+
+  <h2 id="c-burn">9.1 Burn, build, view</h2>
+  <p>Claerbout’s test: can every result be deleted and rebuilt, with one command, identically?</p>
+  <div class="activity">
+  <div class="act-t">Activity 9.1 · The test</div>
+  <ol class="steps">
+    <li data-task="c-burn" data-auto="smk:run argv~--delete-all-output ok=true"><b>Burn</b> – let Snakemake delete every output file it made (log files and empty folders stay): <code>snakemake --delete-all-output</code> <button class="do showme" type="button" data-term="snakemake --delete-all-output">show me</button> then <code>ls -R results</code> <button class="do showme" type="button" data-term="ls -R results">show me</button></li>
+    <li data-task="c-build" data-auto="smk:run argv~--use-conda ok=true"><b>Build</b> – one command: <code>snakemake --cores 1 --use-conda</code> <button class="do showme" type="button" data-term="snakemake --cores 1 --use-conda">show me</button></li>
+    <li data-task="c-view" data-auto="term:command line~md5sum code=0 line~filtered"><b>View</b> – the same result? <code>bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum</code> <button class="do showme" type="button" data-term="bcftools view -H results/variants/NA12878.filtered.vcf.gz | md5sum">show me</button> and <code>open results/report/variant_quality.png</code> <button class="do showme" type="button" data-term="open results/report/variant_quality.png">show me</button></li>
+  </ol>
+</div>
+  <div class="optional">
+    <h3>Extension: clean <span class="pill ext">Extension</span></h3>
+    <p>The fourth command, <b>clean</b>, removes intermediate files. In Snakemake you mark them with <code>temp()</code>: change the output of <code>call_variants</code> to <code>temp("results/variants/{sample}.raw.vcf.gz")</code> and save. Then burn and build again – <code>snakemake --delete-all-output</code> <button class="do showme" type="button" data-term="snakemake --delete-all-output">show me</button> and <code>snakemake --cores 1 --use-conda</code> <button class="do showme" type="button" data-term="snakemake --cores 1 --use-conda">show me</button> – and see Snakemake delete the raw VCF as soon as <code>filter_variants</code> has used it. (A file that already existed is only treated as temporary once it is made again. Keep intermediates you might want to inspect – such as the BAM file – until you are sure.)</p>
+  </div>
+
+  <h2 id="c-compare">9.2 Which is best?</h2>
+  <table class="table small compare">
+    <tr><th></th><th>Bash script</th><th>Snakemake</th><th>Galaxy</th><th>AI agent (black box)</th></tr>
+    <tr><th>The pipeline is…</th><td>a text file of commands</td><td>a text file of rules (Python)</td><td>a graph on a server (.ga file)</td><td>a conversation</td></tr>
+    <tr><th>Record of how each result was made</th><td>none (unless you add it)</td><td>per output: code, params, inputs, environment, logs</td><td>per dataset: tool, version, parameters, command</td><td>none – a story told afterwards</td></tr>
+    <tr><th>Software versions</th><td>whatever is installed</td><td>declared per rule (conda / containers)</td><td>fixed by each tool version on the server</td><td>unknown</td></tr>
+    <tr><th>Re-runs only what is needed</th><td>no</td><td>yes</td><td>per job, by hand</td><td>no – and may answer differently</td></tr>
+    <tr><th>Stops cleanly on errors</th><td>only with strict mode</td><td>yes, and removes broken outputs</td><td>yes (red datasets)</td><td>you cannot tell</td></tr>
+    <tr><th>Many samples, clusters, cloud</th><td>hard</td><td>built in</td><td>possible on a large server</td><td>–</td></tr>
+    <tr><th>Getting started</th><td>easy</td><td>some Python and command line</td><td>easiest – forms and menus</td><td>easiest of all</td></tr>
+    <tr><th>Sharing</th><td>the file (if it runs elsewhere)</td><td>a folder or git repository; runs wherever conda has the pinned packages</td><td>a .ga file, histories – needs a server with the same tools</td><td>–</td></tr>
+  </table>
+  <div class="q" data-q="c-scenarios">
+  <div class="q-text">Which approach would you choose – and why – for (a) a diagnostic lab running the same analysis on hundreds of exomes a week, under audit; (b) a biologist with no programming experience analysing three samples and sharing the analysis with a collaborator; (c) trying out a new variant caller quickly?</div>
+  <div class="q-model"><p>(a) A code-based workflow engine (Snakemake, or Nextflow) with pinned environments or containers, under version control – it scales, runs unattended and records the provenance of every result; a validated Galaxy server is a possible alternative. (b) <b>Galaxy</b>: no programming, a complete history for every dataset, and workflows and histories that can be shared on the same server. (c) Ask an AI assistant to help write the new rule – then add it to your pipeline, so that it runs with a record; not an agent that returns a file. An agent-produced result without provenance is not acceptable in any of the three.</p></div>
+</div>
+  <div class="q" data-q="c-you">
+  <div class="q-text">Which did you find easiest to use, and which gives you the most confidence in a result? Are they the same?</div>
+  <div class="q-model"><p>Personal answers. Often the easiest (the agent, or Galaxy) is not the one that gives the most confidence; confidence comes from a record you can check and a result you can regenerate.</p></div>
+</div>
+
+  <h2 id="c-export">9.3 Export your project</h2>
+  <p>Finish the README: replace its <b>How to run</b> section – the placeholder – with these two sections, and fill in your name and the date. Then download the project. It runs with conda on Linux, on a Mac, or on Windows with WSL.</p>
+  <div class="codefile snippet "><div class="cf-head"><span class="grow"></span><button class="btn small" type="button" data-copy-code="1">Copy</button></div><pre class="codeblock">## How to run
+Needs conda (e.g. Miniforge) and Snakemake 9, on Linux, a Mac or Windows with WSL:
+
+    conda create -n snakemake -c conda-forge -c bioconda snakemake=9.27
+    conda activate snakemake
+    snakemake --cores 1 --use-conda
+
+On a Mac with an Apple processor (M1 or later) the pinned tool versions exist
+only for Intel Macs, so run  CONDA_SUBDIR=osx-64 snakemake --cores 1 --use-conda
+(macOS runs them with Rosetta 2).
+
+Settings are in config/config.yaml; the software of each step is in workflow/envs/.
+
+## Checking a re-run
+The variant records of a correct run have this checksum (on a Mac: md5 instead of md5sum):
+
+    gunzip -c results/variants/NA12878.filtered.vcf.gz | grep -v &#x27;^#&#x27; | md5sum
+    09dd51431f385ed3863928eee0064125  -</pre></div>
+  <div class="activity">
+  <div class="act-t">Activity 9.2 · Take it with you</div>
+  <ol class="steps">
+    <li data-task="c-readme" data-check="has:README.md|use-conda">Complete <code>README.md</code> and save it.</li>
+    <li data-task="c-zip" data-auto="project:download"><button class="do" type="button" data-download-project="lite">Download my project (code, settings, data)</button> – everything needed to run the pipeline, without the results (they can be rebuilt). <button class="do showme" type="button" data-download-project="full">… with the results</button></li>
+    <li data-task="c-ans" data-auto="answers:export"><button class="do" type="button" data-export-answers="1">Download my answers</button></li>
+  </ol>
+</div>
+  <div class="callout info">
+  <div class="co-t">Run it on your own computer</div>
+  <ol>
+    <li>Install <a href="https://conda-forge.org/download/" target="_blank" rel="noopener">Miniforge</a> (conda with the conda-forge channel).</li>
+    <li>Make an environment with Snakemake: <code>conda create -n snakemake -c conda-forge -c bioconda snakemake=9.27</code>, then <code>conda activate snakemake</code>.</li>
+    <li>Unzip the project, <code>cd cyp2c19-pipeline</code>, and run <code>snakemake --cores 1 --use-conda</code>. Snakemake downloads and builds the three environments the first time.
+      On a Mac with an Apple processor (M1 or later), run <code>CONDA_SUBDIR=osx-64 snakemake --cores 1 --use-conda</code> instead: these older tool versions were only ever built for Intel Macs, and macOS runs them with Rosetta 2. (The computer is part of the environment, too.)</li>
+    <li>Check: <code>bcftools</code> is not on your computer outside the environments, so look at the result with <code>gunzip -c results/variants/NA12878.filtered.vcf.gz | grep -v '^#' | md5sum</code> (on a Mac: <code>md5</code> instead of <code>md5sum</code>) – it should print <code>09dd51431f385ed3863928eee0064125</code>.</li>
+  </ol>
+  <p class="small muted">We ran the exported project this way on Linux (Snakemake 9.27.0, conda 26.7): same checksum. With <code>CONDA_SUBDIR=osx-64</code> the same three environments resolve for macOS, with the same versions (checked with conda; not run on a Mac).</p>
+</div>
+  <div class="q" data-q="c-claerbout">
+  <div class="q-text">Does your exported project meet Claerbout’s principle? What does it contain – and what is still missing?</div>
+  <div class="q-model"><p>It contains the <b>data</b> (with checksums and its source in the README), the <b>code</b> (Snakefile and script), the <b>settings</b> (config file), the <b>software environment</b> as pinned environment files, and instructions. Missing or weaker: an exact lock of every package and build (<code>conda env export</code> or a container image), the provenance records themselves (<code>.snakemake/metadata</code>, logs) if you do not include results, the operating system and processor type (these old tool versions exist only for Linux and Intel Macs), a version-control history of how the code changed, and tests. Good enough for a reader to regenerate and check the result – which is the point.</p></div>
+</div>
+
+</section>
+
+<section class="chapter" id="ref" data-num="10" data-title="Reference" data-bench="terminal" hidden>
+  <h1>Reference</h1>
+  <div class="meta-row"><span class="pill time">≈ 5 min</span></div>
+  <p class="lede">Commands, syntax and words from this practical, in one place.</p>
+
+  <h2 id="r-smk">Snakemake</h2>
+  <table class="table small">
+    <tr><td><code>snakemake -n</code></td><td>dry run: show the jobs and the reason for each, run nothing</td></tr>
+    <tr><td><code>snakemake --cores 1</code></td><td>run the pipeline (build the first rule – usually <code>all</code>)</td></tr>
+    <tr><td><code>snakemake --cores 1 FILE</code></td><td>build one file (and what it needs)</td></tr>
+    <tr><td><code>-p</code></td><td>print the shell commands</td></tr>
+    <tr><td><code>--use-conda</code></td><td>run each rule in its <code>conda:</code> environment</td></tr>
+    <tr><td><code>-R RULE</code> / <code>-F</code></td><td>force a rule (and everything after it) / everything to run</td></tr>
+    <tr><td><code>--config key=value</code></td><td>override a setting of the config file</td></tr>
+    <tr><td><code>--dag | dot -Tsvg &gt; dag.svg</code></td><td>draw the graph of jobs (<code>--rulegraph</code>: of rules)</td></tr>
+    <tr><td><code>--summary</code>, <code>-D</code></td><td>the record of every output: rule, date, status (and inputs, command)</td></tr>
+    <tr><td><code>--delete-all-output</code></td><td>delete every output file the pipeline made (not logs)</td></tr>
+    <tr><td><code>--lint</code></td><td>check the Snakefile for common problems</td></tr>
+  </table>
+  <h2 id="r-rule">A rule</h2>
+  <pre class="codeblock">rule call_variants:                        # a name, a colon, an indented body
+    input:
+        ref=REF,                           # named inputs: {input.ref} in the command
+        bam="results/mapped/{sample}.sorted.bam",   # {sample} is a wildcard
+    output:
+        "results/variants/{sample}.raw.vcf.gz",
+    log:
+        "logs/call_variants/{sample}.log",
+    params:
+        depth=250,                         # {params.depth}
+    conda:
+        "envs/calling.yaml"                # with --use-conda
+    shell:
+        "bcftools mpileup -d {params.depth} -f {input.ref} {input.bam} -Ou 2&gt; {log} "
+        "| bcftools call -mv -Oz -o {output} 2&gt;&gt; {log}"
+# braces meant for the shell are doubled:  awk '{{print $1}}'
+# script: "scripts/x.py"  runs Python with a `snakemake` object (snakemake.input, snakemake.output ...)</pre>
+  <h2 id="r-py">Python</h2>
+  <table class="table small">
+    <tr><td><code>x = "text"</code>, <code>n = 20</code></td><td>variables: a string (quotes) and a number</td></tr>
+    <tr><td><code>[a, b]</code>, <code>xs[0]</code>, <code>len(xs)</code></td><td>a list, its first item, its length – mind the commas</td></tr>
+    <tr><td><code>{"k": v}</code>, <code>d["k"]</code></td><td>a dictionary and a lookup</td></tr>
+    <tr><td><code>f"{x}.bam"</code>, <code>"{s}.bam".format(s=x)</code></td><td>fill values into text now / later</td></tr>
+    <tr><td><code>for x in xs:</code> + indented lines</td><td>repeat for each item</td></tr>
+    <tr><td><code>def f(a, b=1):</code> … <code>return</code></td><td>a function with a default argument</td></tr>
+  </table>
+  <h2 id="r-conda">conda and the shell</h2>
+  <table class="table small">
+    <tr><td><code>conda env list</code> / <code>conda activate NAME</code></td><td>environments / switch to one</td></tr>
+    <tr><td><code>conda list</code>, <code>conda env export</code></td><td>what is installed (exact versions and builds)</td></tr>
+    <tr><td><code>conda create -n NAME pkg=1.2</code></td><td><code>=1.2</code>: any 1.2.x; <code>==1.2</code>: exactly 1.2</td></tr>
+    <tr><td><code>pip freeze</code></td><td>Python packages as <code>name==version</code></td></tr>
+    <tr><td><code>set -euo pipefail</code></td><td>bash strict mode: stop at the first error</td></tr>
+    <tr><td><code>md5sum FILES &gt; MD5SUMS</code>, <code>md5sum -c MD5SUMS</code></td><td>record / check checksums</td></tr>
+    <tr><td><code>chmod a-w FILE</code></td><td>make read-only</td></tr>
+    <tr><td><code>diff A B</code></td><td>compare two text files line by line</td></tr>
+  </table>
+  <h2 id="r-words">Words</h2>
+  <table class="table small">
+    <tr><td><b>Pipeline / workflow</b></td><td>a set of steps executed in a defined order to process data</td></tr>
+    <tr><td><b>Workflow engine</b></td><td>the software that runs a pipeline (Snakemake, Nextflow, Galaxy)</td></tr>
+    <tr><td><b>DAG</b></td><td>directed acyclic graph: the jobs and the files that connect them</td></tr>
+    <tr><td><b>Re-entrancy</b></td><td>continuing where a pipeline stopped, redoing only what is needed</td></tr>
+    <tr><td><b>Provenance</b></td><td>the record of how a result was made: data, code, parameters, software</td></tr>
+    <tr><td><b>Environment</b></td><td>a set of installed programs and libraries with particular versions</td></tr>
+    <tr><td><b>Pinning</b></td><td>fixing the exact version of a package</td></tr>
+  </table>
+  <h2 id="r-read">Further reading</h2>
+  <ul class="small">
+    <li>Mölder F, Jablonski KP, Letcher B, et al. Sustainable data analysis with Snakemake. <i>F1000Research</i> 2021, 10:33.</li>
+    <li>Köster J, Rahmann S. Snakemake – a scalable bioinformatics workflow engine. <i>Bioinformatics</i> 2012; 28(19):2520–2522.</li>
+    <li>Leipzig J. A review of bioinformatic pipeline frameworks. <i>Brief Bioinform</i> 2017; 18(3):530–536.</li>
+    <li>Jackson M, Kavoussanakis K, Wallace EWJ. Using prototyping to choose a bioinformatics workflow management system. <i>PLoS Comput Biol</i> 2021; 17(2):e1008622.</li>
+    <li>Sandve GK, Nekrutenko A, Taylor J, Hovig E. Ten simple rules for reproducible computational research. <i>PLoS Comput Biol</i> 2013; 9(10):e1003285.</li>
+    <li>Noble WS. A quick guide to organizing computational biology projects. <i>PLoS Comput Biol</i> 2009; 5(7):e1000424.</li>
+    <li>Claerbout J. <a href="https://sepwww.stanford.edu/sep/jon/reproducible.html" target="_blank" rel="noopener">Reproducible computational research</a> (Stanford Exploration Project).</li>
+    <li>Buckheit JB, Donoho DL. WaveLab and reproducible research. In: Antoniadis A, Oppenheim G (eds) <i>Wavelets and Statistics</i>. Lecture Notes in Statistics 103. Springer, 1995: 55–81.</li>
+    <li><a href="https://snakemake.readthedocs.io/" target="_blank" rel="noopener">Snakemake documentation</a> · <a href="https://training.galaxyproject.org/" target="_blank" rel="noopener">Galaxy Training Network</a></li>
+  </ul>
+
+</section>
+<!--/CHAPTERS-->
+    </aside>
+
+    <div class="splitter" role="separator" aria-orientation="vertical" title="Drag to resize · double-click to reset"></div>
+
+    <section class="bench" aria-label="Workbench">
+      <div class="wb-tabs" role="tablist">
+        <button class="wb-tab on" type="button" role="tab" data-wb="terminal"><svg class="ic" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>Terminal<span class="dot"></span></button>
+        <button class="wb-tab" type="button" role="tab" data-wb="editor"><svg class="ic" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 4h6l2 2h8v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M9 13l2 2 4-4"/></svg>Files<span class="dot"></span></button>
+        <button class="wb-tab" type="button" role="tab" data-wb="notebook"><svg class="ic" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v18M12 8h4M12 12h4"/></svg>Notebook<span class="dot"></span></button>
+        <button class="wb-tab" type="button" role="tab" data-wb="galaxy"><svg class="ic" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><rect x="15" y="3" width="6" height="5" rx="1"/><path d="M9 5.5h6M18 8v8M9 5.5c3 0 3 13 6 13"/></svg>Galaxy<span class="dot"></span></button>
+        <button class="wb-tab" type="button" role="tab" data-wb="assistant"><svg class="ic" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.8 1.9 1.9.8-1.9.8L19 20.4l-.8-1.9-1.9-.8 1.9-.8z"/></svg>AI assistant<span class="dot"></span></button>
+        <button class="bench-close" type="button" aria-label="Back to the instructions">✕ Instructions</button>
+      </div>
+      <div class="wb-body">
+        <div class="wb-pane" data-wb="terminal"><div id="termRoot"></div></div>
+        <div class="wb-pane" data-wb="editor" hidden><div id="edRoot"></div></div>
+        <div class="wb-pane" data-wb="notebook" hidden><div id="nbRoot"></div></div>
+        <div class="wb-pane" data-wb="galaxy" hidden><div id="gxRoot"></div></div>
+        <div class="wb-pane" data-wb="assistant" hidden><div id="aiRoot"></div></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<button class="bench-fab" type="button" aria-label="Open the workbench"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/></svg>Workbench</button>
+<noscript><p style="padding:20px">This page needs JavaScript.</p></noscript>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/core.js"></script>
+<script src="assets/js/icons.js"></script>
+<script src="assets/js/vfs.js"></script>
+<script src="assets/js/shell.js"></script>
+<script src="assets/js/tools-wasm.js"></script>
+<script src="assets/js/conda.js"></script>
+<script src="assets/js/shell-extra.js"></script>
+<script src="assets/js/terminal.js"></script>
+<script src="assets/vendor/codemirror/codemirror.js"></script>
+<script src="assets/vendor/codemirror/python.js"></script>
+<script src="assets/vendor/codemirror/yaml.js"></script>
+<script src="assets/vendor/codemirror/shell.js"></script>
+<script src="assets/vendor/codemirror/markdown.js"></script>
+<script src="assets/vendor/codemirror/matchbrackets.js"></script>
+<script src="assets/vendor/codemirror/closebrackets.js"></script>
+<script src="assets/vendor/codemirror/comment.js"></script>
+<script src="assets/vendor/dompurify/purify.min.js"></script>
+<script src="assets/js/notebook.js"></script>
+<script src="assets/js/pysync.js"></script>
+<script src="assets/js/project.js"></script>
+<script src="assets/js/editor.js"></script>
+<script src="assets/js/galaxy.js"></script>
+<script src="assets/js/assistant-script.js"></script>
+<script src="assets/js/assistant.js"></script>
+<script src="assets/js/page-pipe.js"></script>
+<script src="assets/js/tutorial.js"></script>
+</body>
+</html>

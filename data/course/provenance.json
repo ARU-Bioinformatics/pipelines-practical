@@ -1,0 +1,99 @@
+{
+ "schemaVersion": 1,
+ "sample": "NA12878",
+ "run": "SRR098401",
+ "readGroup": "SRR098401",
+ "study": "SRP004078",
+ "readGroups": [
+  {
+   "ID": "SRR098401",
+   "LB": "Solexa-51024",
+   "SM": "NA12878",
+   "PI": "220",
+   "CN": "BI",
+   "PL": "ILLUMINA",
+   "DS": "SRP004078"
+  }
+ ],
+ "biologicalData": true,
+ "sourceAlignment": {
+  "url": "https://1000genomes.s3.amazonaws.com/phase3/data/NA12878/exome_alignment/NA12878.mapped.ILLUMINA.bwa.CEU.exome.20121211.bam",
+  "mirror": "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/phase3/data/NA12878/exome_alignment/NA12878.mapped.ILLUMINA.bwa.CEU.exome.20121211.bam",
+  "indexUrl": "https://1000genomes.s3.amazonaws.com/phase3/data/NA12878/exome_alignment/NA12878.mapped.ILLUMINA.bwa.CEU.exome.20121211.bam.bai",
+  "bytes": 17282007379,
+  "s3ETag": "9aef4f518d297d80f04a48bd5e14cded-129",
+  "assembly": "NCBI37 / hs37d5",
+  "retrieval": "Indexed HTTP byte-range queries; full BAM not downloaded"
+ },
+ "references": [
+  {
+   "contig": "human_CYP2C19",
+   "sourceContig": "chr10",
+   "start": 96530001,
+   "end": 96560000,
+   "length": 30000,
+   "sourceUrl": "https://api.genome.ucsc.edu/getData/sequence?genome=hg19;chrom=chr10;start=96530000;end=96560000",
+   "sequenceSha256": "57949126673cb6f0507eba1c58358b04c99b031822228ce497eaec36be65abab"
+  },
+  {
+   "contig": "human_CYP2C9",
+   "sourceContig": "chr10",
+   "start": 96699001,
+   "end": 96725000,
+   "length": 26000,
+   "sourceUrl": "https://api.genome.ucsc.edu/getData/sequence?genome=hg19;chrom=chr10;start=96699000;end=96725000",
+   "sequenceSha256": "39d3cfa3113008c30be16c5ef4347594e209e2eb26b641c6ee2affa773eece92"
+  }
+ ],
+ "retrievedOn": "2026-09-30",
+ "extractedPrimaryRecords": 7073,
+ "pairedFragments": 3519,
+ "readLengthCounts": {
+  "76": 7038
+ },
+ "exclusions": {
+  "incomplete_pairs": 35
+ },
+ "retainedSourceFlags": {
+  "duplicateMarkedRecords": 660,
+  "unmappedMateRecords": 82,
+  "qcFailRecords": 0,
+  "recordsWithOQTag": 0
+ },
+ "referenceSpanMeanReadBases": 9.55,
+ "qualityProvenance": "BAM-stored Phred qualities, restored to read orientation. Source header records GATK 1.2-29 base-quality recalibration; no original-quality OQ tags present. Not byte-identical raw deposited FASTQ.",
+ "selection": "Both primary mates must occur among records overlapping the two reference intervals. Exact RG SRR098401. No MAPQ, base-quality, duplicate, QC-fail, proper-pair or variant-allele filter. No random subsampling. Incomplete and hard-clipped pairs excluded; all actual exclusions counted.",
+ "limitations": [
+  "Selection depends on original full-genome BWA mappings and excludes pairs whose partner lies outside fetched intervals; this biases alignment comparisons.",
+  "Exome coverage is uneven. Mean read bases over reference span is not target-region depth or a measured per-base coverage statistic.",
+  "Small reference slices omit genomic competing mapping sites, altering mapping qualities.",
+  "Duplicates remain in FASTQ; source BAM duplicate flags are not transported in FASTQ.",
+  "No independently validated truth VCF or high-confidence mask is supplied. Call-set agreement is not accuracy."
+ ],
+ "software": {
+  "pythonRequirement": "Python 3",
+  "pysam": "0.23.3"
+ },
+ "files": {
+  "SRR098401_1.fastq": {
+   "bytes": 626445,
+   "md5": "d2b8ddb488975fa5ef18e6e59edb5681",
+   "sha256": "4211a2cb05498d2765a103c47efdedc2baba666a0c9b9baf4d050965d5da40a4"
+  },
+  "SRR098401_2.fastq": {
+   "bytes": 626445,
+   "md5": "aee82e1b82bedb037208f5ff5b9ff34b",
+   "sha256": "ea33cd2ae274d82223672af5d374bef690b942c5b31433dbf810a5a6dbeae686"
+  },
+  "hg19_CYP2C_slices.fa": {
+   "bytes": 56963,
+   "md5": "d9155e00b786f74b0837f6a675483563",
+   "sha256": "1bcc0f40286a65dbd0d92a0f4b09354082ca4db1a12e99c56aca969a62c1302e"
+  },
+  "hg19_CYP2C_slices.fa.fai": {
+   "bytes": 60,
+   "md5": "be2dc1c3848ef17c3164595940836fc0",
+   "sha256": "27f4438a73402f7ee815bf03e56811e3a4fc02f08156ca59671542ffce7fe61b"
+  }
+ }
+}

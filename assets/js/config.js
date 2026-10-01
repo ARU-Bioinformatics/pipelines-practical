@@ -25,5 +25,12 @@ window.MG_CONFIG = {
      Live mode needs an API key that each user enters in the assistant's settings.
      Never put an API key in this file – anyone could copy it from a public site. */
   assistantDefaultMode: 'guided',
+
+  /* Live mode: the service offered first ('gemini', 'anthropic' or 'openai') and the
+     model of each. Google's Gemini API has a free tier (a key from aistudio.google.com/apikey).
+     Models are retired from time to time: if live mode reports that a model is not found,
+     put a current one here (see ai.google.dev/gemini-api/docs/models). */
+  liveProvider: 'gemini',
+  geminiModel: 'gemini-3.8-flash',
   anthropicModel: 'claude-sonnet-5-5'
 };

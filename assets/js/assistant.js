@@ -212,7 +212,22 @@
     return fs.exists(SNAKEFILE()) ? fs.readText(SNAKEFILE()) : '';
   }
 
-  const LIVE_DEFAULTS = { provider: 'anthropic', model: (MG.config && MG.config.anthropicModel) || 'claude-sonnet-5-5', baseURL: 'https://api.openai.com/v1', openaiModel: '' };
+  const CFG = MG.config || {};
+  const LIVE_DEFAULTS = {
+    provider: CFG.liveProvider || 'gemini',
+    model: CFG.anthropicModel || 'claude-sonnet-5-5',
+    geminiModel: CFG.geminiModel || 'gemini-3.8-flash',
+    baseURL: 'https://api.openai.com/v1',
+    openaiModel: ''
+  };
+  /* the model of each service; an empty model in the saved settings means the site's default
+     from config.js, so a model changed there (e.g. when one is retired) reaches every student
+     who has not chosen a model of their own */
+  const geminiModelOf = (s) => (s.geminiModel || LIVE_DEFAULTS.geminiModel).trim().replace(/^models\//, '');
+  const anthropicModelOf = (s) => (s.model || LIVE_DEFAULTS.model).trim();
+  const modelOf = (s) => (s.provider === 'gemini' ? geminiModelOf(s) : s.provider === 'anthropic' ? anthropicModelOf(s) : s.openaiModel || 'model');
+  /** Gemini and Anthropic always need a key; an OpenAI-compatible server (e.g. a local one) may not */
+  const needsKey = (s) => s.provider !== 'openai';
 
   /* ------------------------------------------------------------------
      the assistant panel
@@ -235,7 +250,7 @@
       } catch (e) {
         this.key = '';
       }
-      if (this.mode === 'live' && !this.key && this.settings.provider === 'anthropic') this.mode = 'guided';
+      if (this.mode === 'live' && !this.key && needsKey(this.settings)) this.mode = 'guided';
       this.agentRuns = 0;
       this._build();
       this.welcome('chat');
@@ -316,8 +331,7 @@
     }
     renderMode() {
       if (this.mode === 'live') {
-        const m = this.settings.provider === 'anthropic' ? this.settings.model : this.settings.openaiModel || 'model';
-        this.modeEl.innerHTML = `<span class="kdot ok"></span> Live · ${esc(m)}`;
+        this.modeEl.innerHTML = `<span class="kdot ok"></span> Live · ${esc(modelOf(this.settings))}`;
         this.modeEl.classList.add('live');
       } else {
         this.modeEl.innerHTML = '<span class="kdot"></span> Guided';
@@ -524,7 +538,7 @@
       const help = ruleExplainError(q);
       const reply = help
         ? `I don’t have a prepared answer for exactly that, but here is general guidance:\n\n${help}\n\n*Guided mode: rule-based help, not a live AI.*`
-        : 'In **guided mode** I only have prepared answers for the practical’s questions (see the suggestions below), so I can’t answer that one properly.\n\n- Try a suggestion, or rephrase using the words in the instructions.\n- **Copy prompt** makes a prompt (with your Snakefile and config) to paste into any AI tool you are allowed to use.\n- If your lecturer has given you access, switch to a **live** model with ⚙.';
+        : 'In **guided mode** I only have prepared answers for the practical’s questions (see the suggestions below), so I can’t answer that one properly.\n\n- Try a suggestion, or rephrase using the words in the instructions.\n- **Copy prompt** makes a prompt (with your Snakefile and config) to paste into any AI tool you are allowed to use.\n- With an API key (Google Gemini has a free tier), switch to a **live** model with ⚙.';
       this.msgs.chat.push({ role: 'assistant', content: reply });
       this.addBubble('assistant', reply, { badge: help ? 'guided mode · rule-based help' : 'guided mode · no prepared answer' });
       this.renderSuggestions();
@@ -742,7 +756,7 @@
       const e = this.script.find((x) => x.onError && new RegExp(x.onError, 'i').test(hay));
       if (e) return this.playRecorded(e);
       const help = ruleExplainError(hay);
-      const reply = (help ? `Here is what that error usually means:\n\n${help}` : 'I don’t recognise that error. Read the **last lines** of the message first – they usually name the problem – and check the file names and your current folder (`pwd`, `ls`).') + '\n\n*Guided mode: rule-based help, not a live AI. For a live explanation, use ⚙ (if your lecturer gave you access) or **Copy prompt**.*';
+      const reply = (help ? `Here is what that error usually means:\n\n${help}` : 'I don’t recognise that error. Read the **last lines** of the message first – they usually name the problem – and check the file names and your current folder (`pwd`, `ls`).') + '\n\n*Guided mode: rule-based help, not a live AI. For a live explanation, switch to live mode with ⚙ (Google Gemini has a free tier) or use **Copy prompt**.*';
       this.msgs.chat.push({ role: 'assistant', content: reply });
       this.addBubble('assistant', reply, { badge: 'guided mode · rule-based help' });
       bus.emit('ai:answer', { entry: 'rule:error', mode: 'guided' });
@@ -794,7 +808,7 @@
     systemPrompt() {
       const v = (this.nb && this.nb.kernel && this.nb.kernel.versions) || {};
       return [
-        'You are an AI coding assistant embedded in a browser-based practical for MSc bioinformatics students on pipelines and reproducibility (Claerbout’s principle: the scholarship is the full software environment, code and data that produced a result).',
+        'You are an AI coding assistant embedded in a browser-based practical for MSc bioinformatics students on pipelines and reproducibility (Claerbout’s principle: an article about a computational result is only advertising; the scholarship is the complete software environment and instructions – and the data – that produced it).',
         'The students turn a variant-calling analysis (NA12878 exome reads around CYP2C19 and CYP2C9, two slices of hg19) into a Snakemake pipeline, then build the same workflow in a Galaxy-style workflow editor. For most of them this is their first contact with Python.',
         '',
         'Environment (all in the web browser): a bash-like terminal; Snakemake ' + ((v.snakemake || '9.27.0')) + ' (a faithful browser re-implementation); Python ' + (v.python || '3.13') + ' with pandas, numpy, matplotlib and pyyaml (Pyodide); minimap2 2.22, samtools 1.17, bcftools 1.10 (with htslib 1.10), bgzip/tabix (htslib 1.17) and Graphviz dot, compiled to WebAssembly; a conda model with environments "base" and "pipelines". No internet access from the terminal or Python, and no other programs (no bwa, gatk, fastqc, git, docker). Shell: no loops, no command substitution.',
@@ -824,7 +838,7 @@
       return ctx;
     }
     async live(q, extra) {
-      if (!this.key && this.settings.provider === 'anthropic') {
+      if (!this.key && needsKey(this.settings)) {
         this.addBubble('assistant', 'No API key is set for live mode. Open ⚙ to add one, or switch back to guided mode.', { badge: 'live mode' });
         return;
       }
@@ -846,7 +860,7 @@
           this.scroll('chat');
         }, this._abort.signal);
         this.fill(body, text || '(no reply)');
-        b.appendChild(h('div.ai-badge', { html: `live · ${esc(this.settings.provider === 'anthropic' ? this.settings.model : this.settings.openaiModel)} · ${((performance.now() - t0) / 1000).toFixed(1)} s` }));
+        b.appendChild(h('div.ai-badge', { html: `live · ${esc(modelOf(this.settings))} · ${((performance.now() - t0) / 1000).toFixed(1)} s` }));
         this.msgs.chat.push({ role: 'assistant', content: text });
         bus.emit('ai:answer', { entry: 'live', mode: 'live' });
       } catch (e) {
@@ -866,16 +880,37 @@
     async streamLive(messages, onDelta, signal, cfg) {
       const s = (cfg && cfg.settings) || this.settings;
       const key = cfg ? cfg.key : this.key;
+      // turns must alternate between user and assistant: join neighbours of the same role
+      messages = messages.reduce((out, m) => {
+        const last = out[out.length - 1];
+        if (last && last.role === m.role) last.content += '\n\n' + m.content;
+        else out.push({ role: m.role, content: m.content });
+        return out;
+      }, []);
       let r;
       if (s.provider === 'anthropic') {
         r = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-          body: JSON.stringify({ model: s.model, max_tokens: 2000, system: this.systemPrompt(), messages, stream: true }),
+          body: JSON.stringify({ model: anthropicModelOf(s), max_tokens: 2000, system: this.systemPrompt(), messages, stream: true }),
           signal
         }).catch((e) => {
           if (e.name === 'AbortError') throw e;
           throw new Error('Could not reach the Anthropic API (' + e.message + '). Check the internet connection.');
+        });
+      } else if (s.provider === 'gemini') {
+        // Google's Gemini API (generateContent, streamed as server-sent events); the whole conversation is sent each time
+        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModelOf(s))}:streamGenerateContent?alt=sse`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: this.systemPrompt() }] },
+            contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
+          }),
+          signal
+        }).catch((e) => {
+          if (e.name === 'AbortError') throw e;
+          throw new Error('Could not reach the Gemini API (' + e.message + '). Check the internet connection.');
         });
       } else {
         const base = (s.baseURL || '').replace(/\/+$/, '');
@@ -891,13 +926,24 @@
       }
       if (!r.ok) {
         let detail = '';
+        let reason = '';
         try {
           const j = await r.json();
           detail = (j.error && (j.error.message || j.error.type)) || JSON.stringify(j).slice(0, 300);
+          reason = (j.error && ((j.error.details || []).map((d) => d.reason).filter(Boolean)[0] || j.error.status)) || '';
         } catch (e) {
           detail = r.statusText;
         }
-        const why = r.status === 401 ? 'The API key was not accepted.' : r.status === 404 ? 'The model name may be wrong.' : r.status === 429 ? 'Too many requests or no credit left – try again in a minute.' : '';
+        const badKey = r.status === 401 || r.status === 403 || reason === 'API_KEY_INVALID';
+        const why = badKey
+          ? 'The API key was not accepted.'
+          : r.status === 404
+            ? 'The model name may be wrong, or the model has been retired – check the model name in ⚙.'
+            : r.status === 429
+              ? s.provider === 'gemini'
+                ? 'Too many requests: the free tier allows only a few requests per minute and per day – wait a minute and try again.'
+                : 'Too many requests or no credit left – try again in a minute.'
+              : '';
         throw new Error(`HTTP ${r.status}. ${why} ${detail}`.trim());
       }
       const reader = r.body.getReader();
@@ -923,6 +969,13 @@
           if (s.provider === 'anthropic') {
             if (j.type === 'content_block_delta' && j.delta && j.delta.type === 'text_delta') onDelta(j.delta.text);
             else if (j.type === 'error') throw new Error((j.error && j.error.message) || 'stream error');
+          } else if (s.provider === 'gemini') {
+            if (j.error) throw new Error(j.error.message || 'stream error');
+            if (j.promptFeedback && j.promptFeedback.blockReason) throw new Error('Gemini did not answer (' + j.promptFeedback.blockReason + ').');
+            const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+            parts.forEach((p) => {
+              if (p.text && !p.thought) onDelta(p.text);
+            });
           } else {
             const dd = j.choices && j.choices[0] && j.choices[0].delta;
             if (dd && dd.content) onDelta(dd.content);
@@ -968,10 +1021,12 @@
       const html = `
 <div class="ai-set">
   <label class="ai-opt"><input type="radio" name="aimode" value="guided" ${this.mode === 'guided' ? 'checked' : ''}> <span><b>Guided</b> – prepared answers for the practical (no account needed). Some contain deliberate mistakes to find.</span></label>
-  <label class="ai-opt"><input type="radio" name="aimode" value="live" ${this.mode === 'live' ? 'checked' : ''}> <span><b>Live AI</b> – connect a real model with an API key (for example one provided by your lecturer). Applies to the Chat tab; the agent stays simulated.</span></label>
+  <label class="ai-opt"><input type="radio" name="aimode" value="live" ${this.mode === 'live' ? 'checked' : ''}> <span><b>Live AI</b> – connect a real model with your own API key, or one provided by your lecturer. Applies to the Chat tab; the agent stays simulated.</span></label>
   <div class="ai-live-box">
-    <label>Service <select data-k="provider"><option value="anthropic" ${s.provider === 'anthropic' ? 'selected' : ''}>Anthropic (Claude)</option><option value="openai" ${s.provider === 'openai' ? 'selected' : ''}>OpenAI-compatible service</option></select></label>
-    <label data-show="anthropic">Model <input data-k="model" value="${esc(s.model)}" spellcheck="false"></label>
+    <label>Service <select data-k="provider"><option value="gemini" ${s.provider === 'gemini' ? 'selected' : ''}>Google Gemini (free tier available)</option><option value="anthropic" ${s.provider === 'anthropic' ? 'selected' : ''}>Anthropic (Claude)</option><option value="openai" ${s.provider === 'openai' ? 'selected' : ''}>OpenAI-compatible service</option></select></label>
+    <label data-show="gemini">Model <input data-k="geminiModel" value="${esc(geminiModelOf(s))}" spellcheck="false"></label>
+    <p data-show="gemini" class="muted small">Make a free key with a Google account at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> (you must be 18 or over). On the free tier Google may use what you send to improve its products, and human reviewers may read it. The free tier allows only a few requests per minute and per day.</p>
+    <label data-show="anthropic">Model <input data-k="model" value="${esc(anthropicModelOf(s))}" spellcheck="false"></label>
     <label data-show="openai">Base URL <input data-k="baseURL" value="${esc(s.baseURL)}" spellcheck="false"></label>
     <label data-show="openai">Model <input data-k="openaiModel" value="${esc(s.openaiModel)}" placeholder="the model name your service uses" spellcheck="false"></label>
     <label>API key <input data-k="key" type="password" value="${esc(this.key)}" autocomplete="off" spellcheck="false" placeholder="paste the key here"></label>
@@ -992,8 +1047,13 @@
       B.querySelectorAll('input[name="aimode"]').forEach((r) => r.addEventListener('change', sync));
       val('provider').addEventListener('change', sync);
       sync();
+      // a model left at the site's default is saved as '' (= follow config.js)
+      const own = (k, dflt) => {
+        const v = val(k).value.trim().replace(/^models\//, '');
+        return v && v !== dflt ? v : '';
+      };
       const read = () => ({
-        settings: { provider: val('provider').value, model: val('model').value.trim() || LIVE_DEFAULTS.model, baseURL: val('baseURL').value.trim(), openaiModel: val('openaiModel').value.trim() },
+        settings: { provider: val('provider').value, model: own('model', LIVE_DEFAULTS.model), geminiModel: own('geminiModel', LIVE_DEFAULTS.geminiModel), baseURL: val('baseURL').value.trim(), openaiModel: val('openaiModel').value.trim() },
         key: val('key').value.trim()
       });
       B.querySelector('[data-x="test"]').addEventListener('click', async () => {
@@ -1010,7 +1070,7 @@
       B.querySelector('[data-x="save"]').addEventListener('click', () => {
         const r = read();
         const want = B.querySelector('input[name="aimode"]:checked').value;
-        if (want === 'live' && !r.key && r.settings.provider === 'anthropic') {
+        if (want === 'live' && !r.key && needsKey(r.settings)) {
           toast('Add an API key for live mode (or choose guided mode).', 'warn');
           return;
         }

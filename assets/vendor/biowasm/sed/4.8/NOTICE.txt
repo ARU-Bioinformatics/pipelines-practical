@@ -1,0 +1,12 @@
+GNU sed 4.8
+License: GPL-3.0-or-later
+Upstream source: https://ftp.gnu.org/gnu/sed/sed-4.8.tar.xz
+WebAssembly build provider: Biowasm (https://biowasm.com/)
+Build source and scripts: https://github.com/biowasm/biowasm
+Artifact origin: https://biowasm.com/cdn/v3/sed/4.8/
+Retrieved: 2026-09-30
+
+Local JavaScript glue modification: record each Emscripten exit status in
+Module.__exitStatus so the practical runtime can preserve command failures.
+Modified files: sed.js
+The WebAssembly binaries and associated data assets are unmodified.

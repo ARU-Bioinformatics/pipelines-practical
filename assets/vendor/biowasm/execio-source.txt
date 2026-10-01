@@ -1,0 +1,18 @@
+Readable source of the local method embedded in the Aioli worker in aioli.js.
+The upstream minified worker scope provides t (state), x (lazy) and k (eager).
+
+async execIO(program,args,io={}){
+const tool=t.tools.find(q=>(q.program||q.tool)===program);
+if(!tool)throw new Error(`Program ${program} not found`);
+if(tool.loading===x){tool.loading=k;await this._initModules()}
+const fs=tool.module.FS, paths=[io.stdin||"/dev/null",io.stdout||"/dev/stdout",io.stderr||"/dev/stderr"];
+if(tool!==t.base&&tool.ready){const d=t.config.dirShared,cwd=fs.cwd();try{fs.chdir("/");fs.unmount(d)}catch(e){}try{fs.mount(tool.module.PROXYFS,{root:d,fs:t.fs},d)}catch(e){}try{fs.chdir(cwd)}catch(e){}}
+tool.stdout="";tool.stderr="";tool.module.__exitStatus=null;
+for(let fd=0;fd<3;fd++){try{if(fs.streams[fd])fs.close(fs.streams[fd])}catch(e){} const st=fs.open(paths[fd],fd===0?"r":io.merge?"a":"w");if(st.fd!==fd)throw new Error("Cannot bind standard file descriptor "+fd)}
+let failure=null;
+try{tool.module.callMain(args)}catch(e){failure=e;if(typeof e.status==="number")tool.module.__exitStatus=e.status}
+for(let fd=0;fd<3;fd++){try{if(fs.streams[fd])fs.close(fs.streams[fd])}catch(e){}}
+for(let fd=0;fd<3;fd++)fs.open(["/dev/stdin","/dev/stdout","/dev/stderr"][fd],fd===0?"r":"w");
+const status=Number.isInteger(tool.module.__exitStatus)?tool.module.__exitStatus:(failure?1:null);
+const result={code:status,stdout:tool.stdout,stderr:tool.stderr,error:failure?String(failure):null};if(["bowtie2","coreutils","gawk","grep","sed","htslib"].includes(tool.tool)||(failure&&!Number.isInteger(tool.module.__exitStatus))){const cwd=t.base.module.FS.cwd();Object.assign(tool,tool.config);tool.ready=false;await this.init();this.cd(cwd);}return result;
+},

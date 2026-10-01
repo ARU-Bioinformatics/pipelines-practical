@@ -1,0 +1,25 @@
+Local changes to the biowasm runtime in this folder
+===================================================
+The WebAssembly programs (*.wasm) and their data files (*.data) are unmodified.
+Upstream: https://github.com/biowasm/biowasm and https://github.com/biowasm/aioli
+
+Inherited from the Variant Lab exploration site:
+- aioli.js: added the worker method execIO, which runs a program with real
+  file-descriptor stdin/stdout/stderr and returns its exit status.
+- Emscripten JavaScript loaders (TOOL.js): exit(status) is recorded as
+  Module.__exitStatus, so failed commands keep their exit status.
+- The module of a GNU utility is reset after each run, which prevents stale
+  C globals and getopt state.
+
+Added for the Pipelines and reproducibility practical (also in execIO):
+- Before each run the program's PROXYFS view of /shared is remounted, so a
+  file that another program deleted and made again is not served from a
+  stale node cache. (Without this, re-running a Snakemake job whose output
+  had been deleted failed with "RuntimeError: abort(Error: FS error)".)
+- A module that aborted (no exit status) is reset before the next run.
+- The HTSlib utilities (bgzip, tabix) are reset after each run as well. They
+  keep getopt's state between runs, so a second `bgzip -dc FILE` (which the
+  terminal's zcat uses) was read as `bgzip FILE` and compressed the file in
+  place, renaming it FILE.gz.
+
+execio-source.txt is the readable source of execIO as embedded in aioli.js.

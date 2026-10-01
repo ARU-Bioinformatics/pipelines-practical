@@ -1,0 +1,12 @@
+GNU coreutils 8.32
+License: GPL-3.0-or-later
+Upstream source: https://ftp.gnu.org/gnu/coreutils/coreutils-8.32.tar.xz
+WebAssembly build provider: Biowasm (https://biowasm.com/)
+Build source and scripts: https://github.com/biowasm/biowasm
+Artifact origin: https://biowasm.com/cdn/v3/coreutils/8.32/
+Retrieved: 2026-09-30
+
+Local JavaScript glue modification: record each Emscripten exit status in
+Module.__exitStatus so the practical runtime can preserve command failures.
+Modified files: cat.js, comm.js, cut.js, head.js, join.js, paste.js, seq.js, sort.js, tail.js, tee.js, tr.js, uniq.js, wc.js
+The WebAssembly binaries and associated data assets are unmodified.

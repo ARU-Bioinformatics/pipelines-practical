@@ -1,0 +1,44 @@
+[
+  {
+    "package": "bowtie2-2.4.2",
+    "url": "https://github.com/BenLangmead/bowtie2/archive/refs/tags/v2.4.2.tar.gz",
+    "sha256": "ea33a1562faf759b21b3a905e20b87a3524ac4e53af8cd723d9a9f31ee159c8a",
+    "bytes": 10590144,
+    "retrieved": "2026-09-30"
+  },
+  {
+    "package": "minimap2-2.22",
+    "url": "https://github.com/lh3/minimap2/archive/refs/tags/v2.22.tar.gz",
+    "sha256": "b625a7580d9b5996f2553ee90ffcec84870bd9b88c009c9d71e8c1c648c53ed6",
+    "bytes": 251821,
+    "retrieved": "2026-09-30"
+  },
+  {
+    "package": "coreutils-8.32",
+    "url": "https://ftp.gnu.org/gnu/coreutils/coreutils-8.32.tar.xz",
+    "sha256": "4458d8de7849df44ccab15e16b1548b285224dbba5f08fac070c1c0e0bcc4cfa",
+    "bytes": 5547836,
+    "retrieved": "2026-09-30"
+  },
+  {
+    "package": "gawk-5.1.0",
+    "url": "https://ftp.gnu.org/gnu/gawk/gawk-5.1.0.tar.xz",
+    "sha256": "cf5fea4ac5665fd5171af4716baab2effc76306a9572988d5ba1078f196382bd",
+    "bytes": 3154564,
+    "retrieved": "2026-09-30"
+  },
+  {
+    "package": "grep-3.7",
+    "url": "https://ftp.gnu.org/gnu/grep/grep-3.7.tar.xz",
+    "sha256": "5c10da312460aec721984d5d83246d24520ec438dd48d7ab5a05dbc0d6d6823c",
+    "bytes": 1641196,
+    "retrieved": "2026-09-30"
+  },
+  {
+    "package": "sed-4.8",
+    "url": "https://ftp.gnu.org/gnu/sed/sed-4.8.tar.xz",
+    "sha256": "f79b0cfea71b37a8eeec8490db6c5f7ae7719c35587f21edb0617f370eeff633",
+    "bytes": 1348048,
+    "retrieved": "2026-09-30"
+  }
+]

@@ -1,0 +1,17 @@
+Viz.js 3.31.0 – Graphviz compiled to WebAssembly, used to draw Snakemake's
+--dag / --rulegraph output (the terminal's `dot` command).
+
+viz-global.js is dist/viz-global.js from the npm package @viz-js/viz 3.31.0,
+unmodified. SHA-256 of viz-global.js:
+  c9e0b310f9883910e01c66054b48b7ff4be3d8695141116635e72b0af152692e
+Upstream: https://github.com/mdaines/viz-js (tag release-viz-3.31.0)
+
+Viz.js is MIT licensed (LICENSE, copyright Michael Daines).
+The file contains other software in object code form:
+  Graphviz 16.1.0 – Eclipse Public License 1.0 (GRAPHVIZ-EPL-1.0.txt)
+    source: https://gitlab.com/graphviz/graphviz/-/tree/16.1.0
+            https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz
+  Expat 2.8.5 – MIT licence (EXPAT-COPYING.txt)
+    source: https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz
+The build (Emscripten 6.0.10) is described in packages/viz/backend/Dockerfile
+of the Viz.js repository at the tag above.

@@ -1,0 +1,115 @@
+{
+  "repository": "https://github.com/biowasm/biowasm",
+  "commit": "97bb23225892ba5cc59ba0deac8b212b957db66a",
+  "note": "Pinned recipe snapshot retrieved 2026-09-30; original CDN compilation commit/toolchain not established. Not a claim of bit-identical binary reconstruction.",
+  "files": [
+    {
+      "path": ".gitmodules",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/.gitmodules",
+      "sha256": "7d48306ca7ea08a35bcbbb2efab09e20f7b3ced5187ce7da034ad3b498636354",
+      "bytes": 3970
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/CONTRIBUTING.md",
+      "sha256": "f9a75f3b04e196ed91282b542c14fe52e2082adc28e971dd1e469d2bf11a02f6",
+      "bytes": 2235
+    },
+    {
+      "path": "Dockerfile-dev",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/Dockerfile-dev",
+      "sha256": "1d1328f099a002b4042cdfc1f23bc99970e9df96beef2e2547879dbe55297dcd",
+      "bytes": 198
+    },
+    {
+      "path": "LICENSE",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/LICENSE",
+      "sha256": "444ba5f77cb8ced2531b9258de496e2a2dc75b7df0da7aff7d98561b5b3f1210",
+      "bytes": 1074
+    },
+    {
+      "path": "bin/compile.py",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/bin/compile.py",
+      "sha256": "4c264a407a553b33d62ed00276e41463441c1879ed61d5492db07f443ad70766",
+      "bytes": 5818
+    },
+    {
+      "path": "bin/compile.sh",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/bin/compile.sh",
+      "sha256": "550ec3f6044cc6449f544bccc8a882205a40bcb64f343f47a2302f706e76851f",
+      "bytes": 2665
+    },
+    {
+      "path": "bin/shared.sh",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/bin/shared.sh",
+      "sha256": "1e13be630609c7d9a168581a846d3723570ccc040ccb864fb747be3f4e35c939",
+      "bytes": 1663
+    },
+    {
+      "path": "bin/test_server.py",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/bin/test_server.py",
+      "sha256": "665fc3de7acfce0204befa6f92124d88835f061b5490356d1c9beded020ec95b",
+      "bytes": 591
+    },
+    {
+      "path": "biowasm.json",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/biowasm.json",
+      "sha256": "9e19632bdd8f06df95d30853bae9f25ad4b1feb946036b213b2f910204537a48",
+      "bytes": 11416
+    },
+    {
+      "path": "tools/bowtie2/compile.sh",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/bowtie2/compile.sh",
+      "sha256": "cdf48e13dbf44aea2238ed8718223df38a33c4327e1e0ecd11553cf4dce20e93",
+      "bytes": 766
+    },
+    {
+      "path": "tools/bowtie2/patches/v2.4.2.patch",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/bowtie2/patches/v2.4.2.patch",
+      "sha256": "c28a3795f0ce7ea2b75911fbac9cf3621fc9ea0c83e3d68e86a27d5dec187502",
+      "bytes": 2350
+    },
+    {
+      "path": "tools/coreutils/compile.sh",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/coreutils/compile.sh",
+      "sha256": "8ca6caff6e7c5248bb8198a2fc6bd3827cb96118128b8b2712b68eabf53558ee",
+      "bytes": 1090
+    },
+    {
+      "path": "tools/gawk/compile.sh",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/gawk/compile.sh",
+      "sha256": "9546969b49acf90b6021e606601cc70934a25c7aa64c5c402cdff54912f96b85",
+      "bytes": 458
+    },
+    {
+      "path": "tools/gawk/patches/gawk-5.1.0.patch",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/gawk/patches/gawk-5.1.0.patch",
+      "sha256": "80e353742f393e5fb61c471e96e4adaabe7a008bfbfc3531234e79c605433334",
+      "bytes": 387
+    },
+    {
+      "path": "tools/grep/compile.sh",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/grep/compile.sh",
+      "sha256": "0c1c18725f0c02c04659be54d5d684bd80df89783b2b2ddc5a9b17ede561371c",
+      "bytes": 528
+    },
+    {
+      "path": "tools/minimap2/compile.sh",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/minimap2/compile.sh",
+      "sha256": "b15daedb276e5808949f785e5c10e38c65a358df641da34014877a3adc7a8181",
+      "bytes": 488
+    },
+    {
+      "path": "tools/minimap2/patches/v2.22.patch",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/minimap2/patches/v2.22.patch",
+      "sha256": "05e32d486c0fdeda79a1eef7794e4872ec601a44732844e64be20b2c0001b844",
+      "bytes": 11351
+    },
+    {
+      "path": "tools/sed/compile.sh",
+      "url": "https://raw.githubusercontent.com/biowasm/biowasm/97bb23225892ba5cc59ba0deac8b212b957db66a/tools/sed/compile.sh",
+      "sha256": "830486d321a545a2fb00280d769d2a5190c860ef3a33344d15b3d050067181e7",
+      "bytes": 348
+    }
+  ]
+}

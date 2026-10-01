@@ -43,7 +43,7 @@ The full GPL version 3 text is in [assets/vendor/licenses/GPL-3.0.txt](assets/ve
 
 **Pyodide 0.29.5** (MPL 2.0) – CPython 3.13 compiled to WebAssembly – is downloaded by the student's browser from the jsDelivr CDN (`https://cdn.jsdelivr.net/pyodide/v0.29.5/full/`) the first time Python is needed. It provides CPython 3.13.2 (PSF licence) and the Pyodide builds of NumPy 2.2.5 (BSD 3-clause), pandas 2.3.3 (BSD 3-clause), Matplotlib 3.8.4 (Matplotlib licence, BSD-compatible), PyYAML 6.0.2 (MIT) and their dependencies, each under its own licence (see the [Pyodide package list](https://pyodide.org/en/0.29.5/usage/packages-in-pyodide.html)). The README explains how to host Pyodide with the site instead.
 
-In **live mode** only, the AI assistant sends the student's messages to the AI service the student chose, using the student's own API key. No AI model or service is part of the site.
+In **live mode** only, the AI assistant sends the student's messages – and the real agent its commands and their output – to the AI service the student chose, using the student's own API key. No AI model or service is part of the site.
 
 ## Re-implementations written for this practical
 

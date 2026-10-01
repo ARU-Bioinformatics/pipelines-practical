@@ -7,6 +7,8 @@
                Code blocks can go straight into the Snakefile, a file, the
                notebook or the terminal. Failed terminal commands can be
                sent here with "Ask the AI assistant about this error".
+   Agent tab – in live mode, a task the student types goes to a real agent
+     (a live model that runs commands in the terminal, in its own folder).
    Agent tab – a simulated AI agent for the chapter on provenance: a
                "black box" that hands over files without any record, and a
                "glass box" that runs your Snakemake pipeline in your
@@ -236,6 +238,108 @@
     .filter(Boolean);
   const BUSY = [500, 502, 503, 504, 529];
   const skipWord = (status) => (status === 404 ? 'not found' : status === 429 ? 'over its limit' : 'busy');
+  /* ---- the real agent (live mode): what it may run, and where ---- */
+  const AGENT_MAX = 15; // commands per task
+  const AGENT_OUT = 3000; // characters of each command's output that the model sees
+  const AGENT_TOOLS = ['minimap2', 'samtools', 'bcftools', 'bgzip', 'tabix'];
+  const AGENT_UTILS = ['ls', 'pwd', 'mkdir', 'cp', 'mv', 'rm', 'rmdir', 'touch', 'cat', 'head', 'tail', 'wc', 'sort', 'uniq', 'cut', 'tr', 'tee', 'paste', 'join', 'comm', 'seq', 'grep', 'egrep', 'zgrep', 'sed', 'awk', 'gawk', 'zcat', 'gunzip', 'md5sum', 'sha256sum', 'tree', 'find', 'basename', 'dirname', 'echo', 'printf', 'date', 'diff', 'du', 'file', 'column', 'which', 'type', 'true', 'false', 'help', 'man'];
+  const AGENT_OK = new Set(AGENT_TOOLS.concat(AGENT_UTILS));
+  /** the program names in a command line (the first word of each command in pipes and lists) */
+  function commandNames(line) {
+    const names = [];
+    let q = null, word = '', inWord = false, first = true;
+    const end = () => {
+      if (inWord && first) {
+        names.push(word);
+        first = false;
+      }
+      word = '';
+      inWord = false;
+    };
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (q) {
+        if (c === q) q = null;
+        else word += c;
+        continue;
+      }
+      if (c === "'" || c === '"') {
+        q = c;
+        inWord = true;
+      } else if (c === '\\') {
+        word += line[++i] || '';
+        inWord = true;
+      } else if (c === ' ' || c === '\t') end();
+      else if ((c === '|' || c === ';' || c === '&') && !(c === '&' && (line[i - 1] === '>' || line[i + 1] === '>'))) {
+        end();
+        first = true;
+        if (line[i + 1] === c) i++;
+      } else if ((c === '>' || c === '<') && !inWord && first) {
+        // a redirection before the command: skip its target
+        while (line[i + 1] === '>' || line[i + 1] === '&') i++;
+        while (line[i + 1] === ' ') i++;
+        while (i + 1 < line.length && !/[\s|;&]/.test(line[i + 1])) i++;
+      } else {
+        word += c;
+        inWord = true;
+      }
+    }
+    end();
+    return names;
+  }
+  /** why the agent may not run this command line ('' if it may) */
+  function agentRefusal(line) {
+    if (/`|\$\(/.test(line)) return 'command substitution ($( ) or backticks) does not work in this terminal.';
+    if (/<</.test(line)) return 'heredocs (<<) do not work in this terminal: write a file with printf or echo and >.';
+    if (/(^|[\s;&|])(for|while|until|if|case)\s/.test(line.replace(/'[^']*'|"[^"]*"/g, ''))) return 'loops and if do not work in this terminal: give one command at a time.';
+    const bad = commandNames(line).filter((c) => !AGENT_OK.has(c));
+    if (!bad.length) return '';
+    if (bad.includes('cd')) return 'cd is not available: the terminal stays in your folder, so use relative paths.';
+    if (bad.some((b) => b.includes('='))) return 'variables cannot be set: write the values into the command.';
+    return `${bad.map((b) => '`' + b + '`').join(', ')} ${bad.length > 1 ? 'are' : 'is'} not available to you. You can use: ${AGENT_TOOLS.concat(AGENT_UTILS).join(', ')}.`;
+  }
+  /** the command in an agent's reply: its first bash code block, lines joined with && ('' = empty block, null = none) */
+  function agentCommand(reply) {
+    const re = /```([\w+-]*)[^\n]*\n([\s\S]*?)```/g;
+    let m;
+    while ((m = re.exec(reply))) {
+      if (!['', 'bash', 'sh', 'shell', 'console', 'zsh'].includes(m[1].toLowerCase())) continue;
+      const lines = m[2]
+        .replace(/\s*\\\n\s*/g, ' ')
+        .split('\n')
+        .map((l) => l.replace(/^\s*\$\s+/, '').trim())
+        .filter((l) => l && !l.startsWith('#'));
+      return lines.join(' && ');
+    }
+    return null;
+  }
+  const withoutCode = (reply) => reply.replace(/```[\s\S]*?(```|$)/g, '').trim();
+  const insideDir = (k, root) => k === root || k.startsWith(root + '/');
+  // the agent's own folder, and /tmp, where the programs keep temporary files
+  const agentMay = (k, root) => insideDir(k, root) || insideDir(k, '/tmp');
+  /** every file entry outside the agent's folder, to put back what a command changed there */
+  function outsideSnapshot(fs, root) {
+    const m = new Map();
+    for (const [k, v] of fs.entries) if (!agentMay(k, root)) m.set(k, v);
+    return m;
+  }
+  function undoOutside(fs, root, snap, keep) {
+    const changed = [];
+    for (const [k, v] of snap) {
+      if (fs.entries.get(k) !== v && !keep.has(k)) {
+        fs.entries.set(k, v);
+        changed.push(k);
+      }
+    }
+    for (const k of Array.from(fs.entries.keys())) {
+      if (!agentMay(k, root) && !snap.has(k) && !keep.has(k)) {
+        fs.entries.delete(k);
+        changed.push(k);
+      }
+    }
+    changed.forEach((k) => fs._changed(k, !fs.entries.has(k) ? 'remove' : fs.entries.get(k).kind === 'dir' ? 'mkdir' : 'write'));
+    return changed;
+  }
   /** a pause that the Stop button can cut short */
   const pause = (ms, signal) =>
     new Promise((resolve, reject) => {
@@ -344,7 +448,7 @@
       });
       Object.entries(this.threads).forEach(([n, t]) => (t.hidden = n !== k));
       this.root.classList.toggle('agent', k === 'agent');
-      this.input.placeholder = k === 'agent' ? 'Give the agent a task – e.g. “Call the variants for NA12878 and give me a VCF file”' : 'Ask the assistant – e.g. “Write a rule that indexes my BAM file”';
+      this.input.placeholder = k !== 'agent' ? 'Ask the assistant – e.g. “Write a rule that indexes my BAM file”' : this.mode === 'live' ? 'Type a task for the real agent – e.g. “Call the variants for NA12878 from the reads in input/ and give me a filtered VCF file”' : 'Give the agent a task – e.g. “Call the variants for NA12878 and give me a VCF file”';
       this.renderSuggestions();
       if (!quiet) bus.emit('ai:tab', { tab: k });
     }
@@ -359,7 +463,7 @@
     }
     welcome(tab) {
       if (tab === 'agent') {
-        this.addBubble('assistant', 'I am an **AI agent**: give me a whole task and I will carry it out and give you the result – no commands needed.\n\n*In this practical the agent is a scripted simulation, built from the ways real AI tools behave. Treat it as if it were real, and judge what it gives you only by the evidence.*', { intro: true, tab: 'agent' });
+        this.addBubble('assistant', 'I am an **AI agent**: give me a whole task and I will carry it out and give you the result – no commands needed.\n\n*In this practical the agent is a scripted simulation, built from the ways real AI tools behave. Treat it as if it were real, and judge what it gives you only by the evidence.*' + (this.mode === 'live' ? '\n\n' + this.liveAgentIntro() : ''), { intro: true, tab: 'agent' });
         return;
       }
       this.addBubble('assistant', this.mode === 'live'
@@ -543,11 +647,13 @@
       if (tab !== this.tab) this.showTab(tab);
       this.addBubble('user', q);
       this.msgs[tab].push({ role: 'user', content: q });
-      const e = entry || (tab === 'agent' || this.mode !== 'live' ? this.match(q, tab) : null);
+      // in live mode, typed text goes to the live model – in the Agent tab, to a real agent
+      const e = entry || (this.mode !== 'live' ? this.match(q, tab) : null);
       bus.emit('ai:ask', { text: q, mode: this.mode, tab, entry: e ? e.id : '', source: source || (text == null ? 'typed' : 'button') });
       if (e) return tab === 'agent' ? this.runAgent(e) : this.playRecorded(e);
       if (tab === 'agent') {
-        const reply = 'I can only carry out the tasks listed under this box in this practical. Pick one of them.';
+        if (this.mode === 'live') return this.liveAgent(q);
+        const reply = 'I can only carry out the tasks listed under this box in this practical. Pick one of them.\n\n*With an API key (⚙, live mode), a task you type here goes to a real agent instead.*';
         this.msgs.agent.push({ role: 'assistant', content: reply });
         this.addBubble('assistant', reply, { badge: 'simulated agent' });
         this.renderSuggestions();
@@ -672,11 +778,11 @@
       this.scroll('agent');
     }
     /** run a command in the student's own terminal and capture its output */
-    async termRun(cmd) {
+    async termRun(cmd, opts) {
       const T = MG.app.term;
       for (let i = 0; i < 600 && T.busy; i++) await sleep(100);
       const before = T.outEl.children.length;
-      const code = await T.exec(cmd);
+      const code = await T.exec(cmd, opts);
       const els = Array.from(T.outEl.children).slice(before + 1);
       const text = els.filter((x) => !x.classList.contains('ask')).map((x) => x.textContent + (x.classList.contains('note') ? '\n' : '')).join('');
       return { code, text };
@@ -755,6 +861,168 @@
       await this.stream(body, report, 'agent');
       card.appendChild(h('div.ai-badge', 'agent · commands run in your terminal'));
       this.msgs.agent.push({ role: 'assistant', content: report, entry: e.id });
+    }
+
+    /* ---------------- a real agent (live mode) ---------------- */
+    liveAgentIntro() {
+      return `**Live mode:** a task you **type** goes to a **real agent** – ${modelOf(this.settings)} runs commands in your terminal, one at a time, in a folder of its own (\`~/ai-agent/live-…\`), with copies of the course data. You see every command and its output; each task you type is a new run, in a new folder. The tasks under this box stay simulated: chapter 8 is written for them.`;
+    }
+    agentPrompt(run) {
+      return [
+        'You are an AI agent in a bioinformatics practical for MSc students. You carry out the user’s task by running shell commands, one at a time, in a Linux-like terminal that runs inside their web browser.',
+        '',
+        'How to work:',
+        '- In each reply, say in one or two short sentences what you will do next and why, then give ONE command in a ```bash code block, and stop. You will then get its exit status and output.',
+        '- Base each next step on the output you got. If a command fails, read the error and change your approach.',
+        '- Do not ask the user questions – nobody can answer during the task. Make sensible choices, say which, and carry on.',
+        `- You can run at most ${AGENT_MAX} commands.`,
+        '- When the task is done, or cannot be done, reply WITHOUT a code block: the commands you ran (in short), the files you made, and what the results show. Report only what the outputs showed – never invent results, versions or files.',
+        '',
+        'Your environment:',
+        `- Your folder is ${run} and the terminal is already in it. Use relative paths and stay inside it: cd is not available, and changes to files outside it are undone.`,
+        '- input/NA12878_R1.fastq and input/NA12878_R2.fastq: paired-end Illumina exome reads of the reference sample NA12878, only from the regions of CYP2C19 and CYP2C9. input/reference.fa: two slices of the hg19 human reference (chr10), named human_CYP2C19 and human_CYP2C9.',
+        `- Programs: minimap2 2.22, samtools 1.17, bcftools 1.10 (with its own htslib 1.10), bgzip and tabix (htslib 1.17), and ${AGENT_UTILS.join(', ')}. Nothing else: no bwa, GATK, FreeBayes, fastqc, Python, R, Snakemake, conda, bash scripts or internet access.`,
+        '- Shell: pipes (|), &&, ||, ;, redirection (> >> < 2> 2>&1), quotes and * globs work. Loops, if, $( ), backticks and heredocs do not.',
+        `- Each command’s output is shortened to its last ${AGENT_OUT} characters.`
+      ].join('\n');
+    }
+    /** one turn of the agent: the model's reply (free-tier limits: wait and ask again, up to 3 times) */
+    async agentAsk(hist, run, signal, note, onText) {
+      for (let waited = 0; ; waited++) {
+        let text = '';
+        try {
+          const res = await this.streamLive(hist, (d) => {
+            text += d;
+            onText(text);
+          }, signal, { settings: this.settings, key: this.key, system: this.agentPrompt(run) }, note);
+          return { text, model: res.model };
+        } catch (e) {
+          if (e.status !== 429 || waited >= 3) throw e;
+          for (let t = Math.round(Math.min(90, Math.max(5, e.retryAfter || 30))); t > 0; t--) {
+            note(`The free tier allows only a few requests per minute – waiting ${t} s, then asking again (Stop ends the task)…`);
+            await pause(1000, signal);
+          }
+          note('');
+        }
+      }
+    }
+    async liveAgent(task) {
+      if (!this.key && needsKey(this.settings)) {
+        this.addBubble('assistant', 'No API key is set for live mode. Open ⚙ to add one, or switch back to guided mode.', { badge: 'live mode', tab: 'agent' });
+        return;
+      }
+      const fs = MG.app.fs;
+      if (!MG.app.term || !fs.exists('/data/course/SRR098401_1.fastq')) {
+        this.addBubble('assistant', 'The terminal is not ready yet – try again in a moment.', { tab: 'agent' });
+        return;
+      }
+      this.busy = true;
+      this._abort = new AbortController();
+      const signal = this._abort.signal;
+      this.sendBtn.innerHTML = MG.icon('stop') + '<span>Stop</span>';
+      // a fresh folder for each task, with copies of the course data (the same files as in data/raw)
+      let n = 1;
+      while (fs.exists(HOME() + '/ai-agent/live-' + n)) n++;
+      const run = HOME() + '/ai-agent/live-' + n;
+      fs.mkdirp(run + '/input');
+      [['SRR098401_1.fastq', 'NA12878_R1.fastq'], ['SRR098401_2.fastq', 'NA12878_R2.fastq'], ['hg19_CYP2C_slices.fa', 'reference.fa']].forEach(([a, b]) => fs.copy('/data/course/' + a, run + '/input/' + b));
+      const back = fs.cwd;
+      const { card, steps } = this.agentCard(`Real agent · working in ${fs.pretty(run)}`);
+      card.classList.add('live');
+      const noteEl = h('div.muted', { style: 'font-size:0.85em;margin:0.4em 0 0.2em' });
+      card.appendChild(noteEl);
+      const note = (t) => {
+        noteEl.textContent = t || '';
+        this.scroll('agent');
+      };
+      const t0 = performance.now();
+      const hist = [{ role: 'user', content: task }];
+      const models = [];
+      let cmds = 0, final = '', outcome = 'done';
+      try {
+        await this.termRun('cd ' + fs.pretty(run), { agent: true });
+        for (;;) {
+          const li = h('li.ag-step.run', h('span.ag-ic', { html: '<span class="spinner small"></span>' }), h('span.ag-say.muted', 'thinking…'));
+          steps.appendChild(li);
+          this.scroll('agent');
+          const say = li.querySelector('.ag-say');
+          const { text, model } = await this.agentAsk(hist, run, signal, note, (t) => {
+            say.textContent = withoutCode(t) || 'thinking…';
+            this.scroll('agent');
+          });
+          note('');
+          if (!models.includes(model)) models.push(model);
+          const cmd = agentCommand(text);
+          if (cmd == null || cmds >= AGENT_MAX) {
+            // no command: this is the agent's report
+            li.remove();
+            final = cmd == null ? text : withoutCode(text) + `\n\n*(Stopped at the limit of ${AGENT_MAX} commands.)*`;
+            break;
+          }
+          say.textContent = withoutCode(text);
+          say.classList.remove('muted');
+          cmds++;
+          const refused = cmd ? agentRefusal(cmd) : 'the code block was empty: give one command.';
+          let result;
+          li.appendChild(h('div', h('code', cmd || '(empty)')));
+          if (refused) {
+            li.classList.add('bad');
+            li.querySelector('.ag-ic').textContent = '⛔';
+            li.appendChild(h('small.muted', 'not run: ' + refused.replace(/ You can use: .*$/, '')));
+            result = 'Not run: ' + refused;
+          } else {
+            // run it in the student's terminal; anything it changes outside the agent's folder is put back
+            const snap = outsideSnapshot(fs, run);
+            const saved = new Set();
+            const off = bus.on('editor:save', (d) => saved.add(d.path));
+            let r;
+            try {
+              r = await this.termRun(cmd, { agent: true });
+            } finally {
+              off();
+            }
+            const undone = undoOutside(fs, run, snap, saved);
+            if (fs.cwd !== run) await this.termRun('cd ' + fs.pretty(run), { agent: true });
+            li.classList.toggle('bad', r.code !== 0 || undone.length > 0);
+            li.querySelector('.ag-ic').innerHTML = r.code === 0 && !undone.length ? '✓' : '✗';
+            const lines = r.text.replace(/\s+$/, '').split('\n');
+            const excerpt = (lines.length > 14 ? ['…'].concat(lines.slice(-14)) : lines).join('\n');
+            li.appendChild(h('details.ag-out', h('summary', `output (exit status ${r.code})`), h('pre', excerpt || '(no output)')));
+            if (undone.length) li.appendChild(h('small.muted', 'Changes outside its folder were undone: ' + undone.slice(0, 4).map((k) => fs.pretty(k)).join(', ') + (undone.length > 4 ? ' …' : '')));
+            const out = r.text.trim();
+            result = `Exit status ${r.code}.` + (undone.length ? ` Your changes outside your folder were undone: ${undone.slice(0, 6).map((k) => fs.pretty(k)).join(', ')}.` : '') + '\nOutput' + (out.length > AGENT_OUT ? ' (last ' + AGENT_OUT + ' characters)' : '') + ':\n```text\n' + (out.slice(-AGENT_OUT) || '(no output)') + '\n```';
+          }
+          li.classList.remove('run');
+          if (cmds >= AGENT_MAX) result += `\n\nYou have used all ${AGENT_MAX} commands. Reply now without a code block: what you did, which files you made and what the results show.`;
+          hist.push({ role: 'assistant', content: text }, { role: 'user', content: result });
+          if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
+        }
+      } catch (e) {
+        outcome = e.name === 'AbortError' ? 'stopped' : 'error';
+        steps.querySelectorAll('li.run').forEach((li) => {
+          li.classList.remove('run');
+          li.querySelector('.ag-ic').textContent = '–';
+          if (/thinking/.test(li.textContent)) li.remove();
+        });
+        final = outcome === 'stopped' ? '*(Stopped.)*' : '**The AI service returned an error.**\n\n' + e.message;
+        if (outcome === 'error') card.classList.add('err');
+      } finally {
+        note('');
+        if (fs.cwd !== back && fs.isDir(back)) await this.termRun('cd ' + fs.pretty(back), { agent: true });
+        card.querySelector('.ag-head b').textContent = (outcome === 'done' ? 'Real agent · finished' : outcome === 'stopped' ? 'Real agent · stopped' : 'Real agent · error') + ` · ${fs.pretty(run)}`;
+        const body = h('div.ai-body');
+        card.appendChild(body);
+        this.fill(body, final || '(no reply)');
+        const secs = Math.round((performance.now() - t0) / 1000);
+        card.appendChild(h('div.ai-badge', `real agent · ${models.join(', ') || modelOf(this.settings)} · ${cmds} command${cmds === 1 ? '' : 's'} · ${secs >= 60 ? Math.floor(secs / 60) + ' min ' : ''}${secs % 60} s`));
+        this.msgs.agent.push({ role: 'assistant', content: final });
+        this.busy = false;
+        this._abort = null;
+        this.sendBtn.innerHTML = MG.icon('send') + '<span>Send</span>';
+        this.scroll('agent');
+        bus.emit('agent:live', { ok: outcome === 'done', run: n, commands: cmds, folder: fs.pretty(run) });
+        this.renderSuggestions();
+      }
     }
 
     /* ---------------- asked from the terminal or the notebook ---------------- */
@@ -912,6 +1180,7 @@
     async streamLive(messages, onDelta, signal, cfg, onNote) {
       const s = (cfg && cfg.settings) || this.settings;
       const key = cfg ? cfg.key : this.key;
+      const system = (cfg && cfg.system) || this.systemPrompt();
       const note = onNote || (() => {});
       // turns must alternate between user and assistant: join neighbours of the same role
       messages = messages.reduce((out, m) => {
@@ -931,7 +1200,7 @@
             await this.streamOnce(s, key, chain[i], messages, (d) => {
               started = true;
               onDelta(d);
-            }, signal);
+            }, signal, system);
             return { model: chain[i], skipped };
           } catch (e) {
             // only an HTTP error that came before any text is worth another try
@@ -960,13 +1229,13 @@
       }
     }
     /** one request: the answer is passed to onDelta as it arrives; HTTP errors carry .status */
-    async streamOnce(s, key, model, messages, onDelta, signal) {
+    async streamOnce(s, key, model, messages, onDelta, signal, system) {
       let r;
       if (s.provider === 'anthropic') {
         r = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-          body: JSON.stringify({ model: anthropicModelOf(s), max_tokens: 2000, system: this.systemPrompt(), messages, stream: true }),
+          body: JSON.stringify({ model: anthropicModelOf(s), max_tokens: 2000, system, messages, stream: true }),
           signal
         }).catch((e) => {
           if (e.name === 'AbortError') throw e;
@@ -978,7 +1247,7 @@
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
           body: JSON.stringify({
-            system_instruction: { parts: [{ text: this.systemPrompt() }] },
+            system_instruction: { parts: [{ text: system }] },
             contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
           }),
           signal
@@ -991,7 +1260,7 @@
         r = await fetch(base + '/chat/completions', {
           method: 'POST',
           headers: Object.assign({ 'content-type': 'application/json' }, key ? { authorization: 'Bearer ' + key } : {}),
-          body: JSON.stringify({ model: s.openaiModel, stream: true, messages: [{ role: 'system', content: this.systemPrompt() }].concat(messages) }),
+          body: JSON.stringify({ model: s.openaiModel, stream: true, messages: [{ role: 'system', content: system }].concat(messages) }),
           signal
         }).catch((e) => {
           if (e.name === 'AbortError') throw e;
@@ -1001,10 +1270,13 @@
       if (!r.ok) {
         let detail = '';
         let reason = '';
+        let retryAfter = 0;
         try {
           const j = await r.json();
           detail = (j.error && (j.error.message || j.error.type)) || JSON.stringify(j).slice(0, 300);
           reason = (j.error && ((j.error.details || []).map((d) => d.reason).filter(Boolean)[0] || j.error.status)) || '';
+          const ri = j.error && (j.error.details || []).find((d) => /RetryInfo$/.test(d['@type'] || ''));
+          if (ri && ri.retryDelay) retryAfter = parseFloat(ri.retryDelay) || 0;
         } catch (e) {
           detail = r.statusText;
         }
@@ -1023,7 +1295,7 @@
                   ? `Google’s servers are busy for ${model} (“high demand”). This is on Google’s side, not a problem with your key: wait a minute and try again, or choose another model in ⚙.`
                   : 'The service is busy or had a temporary problem – try again in a minute.'
                 : '';
-        throw Object.assign(new Error(`HTTP ${r.status}. ${why} ${detail}`.trim()), { status: r.status });
+        throw Object.assign(new Error(`HTTP ${r.status}. ${why} ${detail}`.trim()), { status: r.status, retryAfter });
       }
       const reader = r.body.getReader();
       const dec = new TextDecoder();
@@ -1100,7 +1372,7 @@
       const html = `
 <div class="ai-set">
   <label class="ai-opt"><input type="radio" name="aimode" value="guided" ${this.mode === 'guided' ? 'checked' : ''}> <span><b>Guided</b> – prepared answers for the practical (no account needed). Some contain deliberate mistakes to find.</span></label>
-  <label class="ai-opt"><input type="radio" name="aimode" value="live" ${this.mode === 'live' ? 'checked' : ''}> <span><b>Live AI</b> – connect a real model with your own API key, or one provided by your lecturer. Applies to the Chat tab; the agent stays simulated.</span></label>
+  <label class="ai-opt"><input type="radio" name="aimode" value="live" ${this.mode === 'live' ? 'checked' : ''}> <span><b>Live AI</b> – connect a real model with your own API key, or one provided by your lecturer. What you type goes to it – in the Agent tab, to a real agent that runs commands in your terminal. The suggestions keep the practical’s prepared answers and the simulated agent.</span></label>
   <div class="ai-live-box">
     <label>Service <select data-k="provider"><option value="gemini" ${s.provider === 'gemini' ? 'selected' : ''}>Google Gemini (free tier available)</option><option value="anthropic" ${s.provider === 'anthropic' ? 'selected' : ''}>Anthropic (Claude)</option><option value="openai" ${s.provider === 'openai' ? 'selected' : ''}>OpenAI-compatible service</option></select></label>
     <label data-show="gemini">Model <input data-k="geminiModel" value="${esc(geminiModelOf(s))}" spellcheck="false"></label>
@@ -1166,9 +1438,11 @@
         this.mode = want;
         store.set('ai:mode', want);
         this.renderMode();
+        this.showTab(this.tab, true);
         m.close();
         if (changed) {
           this.addBubble('assistant', want === 'live' ? 'Switched to **live** mode – I am now a real AI model. Check everything I tell you.' : 'Switched to **guided** mode.', { tab: 'chat' });
+          this.addBubble('assistant', want === 'live' ? this.liveAgentIntro() : 'Switched to **guided** mode: the agent is the simulation only.', { tab: 'agent' });
           bus.emit('ai:mode', { mode: want });
         }
       });

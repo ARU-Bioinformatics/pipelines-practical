@@ -258,7 +258,9 @@
     }
 
     /** execute a line as if typed */
-    async exec(line) {
+    /** run a command line as if typed. opts.agent: run by the real AI agent – its commands do not
+        tick the student's tasks and do not offer "Ask the AI assistant" */
+    async exec(line, opts = {}) {
       if(this.busy){this.note('The shared terminal is busy.');return 125;}
       this._echo(line);
       const first = this.outEl.children.length;
@@ -289,6 +291,7 @@
         this.focus();
       }
       const argv = safeArgv(line);
+      if (opts.agent) return code;
       bus.emit('term:command', { line: line.trim(), code, name: argv[0] || '', sub: argv[1] || '', ms: performance.now() - t0 });
       if (code && code !== 130 && this.opts.askAI !== false && MG.Assistant) this._offerAsk(line, first);
       return code;

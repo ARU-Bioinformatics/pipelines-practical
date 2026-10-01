@@ -64,7 +64,7 @@ def ch_galaxy():
 def ch_agent():
     f1 = '~/ai-agent/NA12878_variants.vcf'
     body = f'''
-  {callout('warn', 'Before you start', """<p>The agent in this practical is a <b>scripted simulation</b>: it does not run any analysis. It was written to show, in miniature, problems people meet with AI tools – confident answers that are not based on your data, invented details, and answers that change when you ask again. Your job is to find out what its result is worth <b>from the evidence alone</b>, as if it were real. Real agents can run tools – and when they do, the same questions apply: which tool, which version, which data, and where is the record?</p>""")}
+  {callout('warn', 'Before you start', """<p>The agent in this practical is a <b>scripted simulation</b>: it does not run any analysis. It was written to show, in miniature, problems people meet with AI tools – confident answers that are not based on your data, invented details, and answers that change when you ask again. Your job is to find out what its result is worth <b>from the evidence alone</b>, as if it were real. Real agents can run tools – and when they do, the same questions apply: which tool, which version, which data, and where is the record?</p><p>If you have switched the assistant to <b>live</b> mode (⚙), use the <b>suggested tasks</b> under the box for 8.1–8.4: a task you type goes to a real agent instead (see the extension at the end of this chapter).</p>""")}
 
   <h2 id="a-task">8.1 Give the agent the job</h2>
   {activity('Activity 8.1 · Delegate', [
@@ -111,6 +111,16 @@ def ch_agent():
   ])}
   {q('a-claerbout', 'In Claerbout’s terms, what is the difference between what the two agents gave you?',
      """<p>The first agent gave you <b>advertising</b>: a file and a confident story, with no code, data record or environment behind it – nothing that can be inspected or re-run. The second ran <b>your</b> pipeline, so the <b>scholarship</b> exists: the Snakefile, the config, the environment files, the data with checksums, and Snakemake’s record of every job – visible in your terminal and in <code>.snakemake/metadata</code>. It does not matter who (or what) typed the commands, as long as the record is made by the process and can be checked.</p>""")}
+  <div class="optional">
+    <h3>Extension: a real agent <span class="pill ext">Extension</span></h3>
+    <p>With a live model connected (⚙ in the assistant – for example a free Google Gemini key), a task you <b>type</b> in the Agent tab goes to a <b>real agent</b>: the model chooses a command, runs it in your terminal, reads the output and decides what to do next. It works in a folder of its own, <code>~/ai-agent/live-1</code> (then <code>live-2</code>, …), with copies of the course data; anything it changes elsewhere is undone. Each step is a request to the AI service, so a task uses about 5–15 of your free requests.</p>
+    {activity('Extension · A real agent', [
+        task('a-live', 'In the Agent tab, type the task <b>“Call the variants for NA12878 from the reads in input/ and give me a filtered VCF file”</b>. Watch its commands in the <b>Terminal</b>, then read its report.', auto='agent:live ok=true'),
+        task('a-live2', 'Give it <b>exactly the same task again</b>, and compare the two runs: the commands and options it chose, the files it made, and the number of variants. For each run’s VCF, a checksum of the records: <code>bcftools view -H FILE | md5sum</code>.', auto='agent:live ok=true run>1'),
+    ])}
+    {q('a-live-q', 'This agent really ran the tools on your reads. Is its result as trustworthy as your pipeline’s? What record is there of how it was made, and what is missing?',
+       """<p>It is far better than the simulation: the commands, their output and the files are real, and you saw them happen. But it is not a pipeline. The commands and options – mapping preset, read groups, calling model, filters – were <b>chosen during the run</b>; a second run often chooses differently, and its results then differ. The transcript stays in the browser tab, not with the results; nothing pins the software versions; and giving the agent the task again does not repeat the same steps. To make the result reproducible, turn its commands into rules in your Snakefile, with pinned environments: use the agent to help <b>write</b> the pipeline, not to produce the result.</p>""")}
+  </div>
   {callout('info', 'Using AI in an analysis', """<ul>
     <li>Use AI to <b>write and explain code</b> you can read, run, test and keep – a Snakefile rule, a script – not to produce results you cannot check.</li>
     <li>Never accept a result without <b>provenance</b>: which data, which software and version, which parameters – recorded by the process, not described afterwards.</li>

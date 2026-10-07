@@ -230,89 +230,156 @@
   const modelOf = (s) => (s.provider === 'gemini' ? geminiModelOf(s) : s.provider === 'anthropic' ? anthropicModelOf(s) : s.openaiModel || 'model');
   /** Gemini and Anthropic always need a key; an OpenAI-compatible server (e.g. a local one) may not */
   const needsKey = (s) => s.provider !== 'openai';
-  /* A model can be "experiencing high demand" (HTTP 503), and each Gemini model has its own
-     free-tier limits (HTTP 429). Live mode then asks these models in turn; the answer says which
-     model replied. */
-  const GEMINI_FALLBACKS = (Array.isArray(CFG.geminiFallbackModels) ? CFG.geminiFallbackModels : ['gemini-3.6-flash', 'gemini-3.5-flash-lite'])
-    .map((m) => String(m).trim().replace(/^models\//, ''))
-    .filter(Boolean);
+  /* A Gemini model can be busy (HTTP 503 "high demand"), give no answer at all, or be over one
+     of its limits (429) – on the free tier each model has limits of its own, per minute and per
+     day. Then the next model of this list is asked; the answer says which one replied.
+     The page remembers what a model said, and does not ask it again before that can have
+     changed: a busy model after two minutes (then four, eight … if it is busy again), a silent
+     one after one minute, a model over a limit when the service says the limit is over (a limit
+     per day: not before tomorrow), a model that was not found not at all. That saves time –
+     "busy" can take twenty seconds to arrive – and requests, of which the free tier allows few:
+     on 6 October 2026, 20 a day for each of the four larger models, and a request that was
+     answered "busy" counted as one of them. The memory belongs to one key – another key is
+     another project, with limits of its own – and lasts until the page is loaded again. */
+  const FALLBACK_DEFAULT = ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+  const FALLBACKS = (Array.isArray(CFG.geminiFallbackModels) ? CFG.geminiFallbackModels : FALLBACK_DEFAULT).map((m) => String(m).trim().replace(/^models\//, '')).filter(Boolean);
   const BUSY = [500, 502, 503, 504, 529];
-  const skipWord = (status) => (status === 404 ? 'not found' : status === 429 ? 'over its limit' : 'busy');
+  const BUSY_REST = 120, SILENT_REST = 60; // seconds
+  const RETRY = 20; // seconds after which it is worth asking busy or silent models again
+  /* how long a Gemini model may say nothing – before its answer begins, or in the middle of it – until the request is given up */
+  const WAIT = () => (+CFG.aiWaitSeconds > 0 ? Math.max(1, +CFG.aiWaitSeconds) : 60);
+  const REST = new Map(); // model → { model, why: 'busy' | 'noanswer' | 'limit' | 'notfound', at, until (ms), daily, limit, n, status, text }
+  let restKey = null;
+  const resting = (model) => {
+    const r = REST.get(model);
+    return r && r.until > Date.now() ? r : null;
+  };
+  const hhmm = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  /** what kept a model from answering: in a word or two (under an answer, in the bar) … */
+  const skipWord = (x) => (x.why === 'notfound' ? 'not found' : x.why === 'limit' ? (x.daily ? 'over its limit for today' : 'over its limit') : x.why === 'noanswer' ? 'gave no answer' : x.why === 'broke' ? 'broke off' : 'busy');
+  /** … and as part of a sentence – with the numbers that the service gave, unless short */
+  const told = (x, short) =>
+    x.why === 'notfound'
+      ? 'was not found'
+      : x.why === 'limit'
+        ? x.daily
+          ? 'is over its limit for today' + (short ? '' : (x.limit != null ? `: ${x.limit} requests a day` : '') + (isFinite(x.until) ? `, again after ${hhmm(x.until)}` : ''))
+          : 'is over its limit per minute'
+        : x.why === 'noanswer'
+          ? 'gave no answer'
+          : 'is busy';
+  /** the error when no Gemini model answered: what each one said. .status: 429 (limits), 503 (busy), 404, or not set
+      (no answer came); .retryIn: after how many seconds asking again can help – 0 when it cannot today */
+  function noAnswer(all, connection) {
+    const some = (f) => all.some(f);
+    const waits = all.filter((x) => x.why === 'limit' && !x.daily).map((x) => Math.min(90, Math.max(1, Math.ceil((x.until - Date.now()) / 1000))));
+    if (some((x) => x.why === 'busy' || x.why === 'noanswer')) waits.push(RETRY);
+    const retryIn = waits.length ? Math.min(...waits) : 0;
+    // one model only (no fallback models): its own words
+    if (all.length === 1) return Object.assign(new Error(all[0].text), { status: all[0].status, network: all[0].why === 'noanswer', retryIn });
+    let status, lead;
+    // (a model that answered within the last two minutes, if only with "busy" or "over its limit": the service can be reached)
+    const heard = some((x) => x.status && Date.now() - x.at < 120000);
+    if (connection || (some((x) => x.why === 'noanswer') && !some((x) => x.why === 'busy'))) lead = heard ? 'No answer came from the Gemini API, though it can be reached: try again in a moment.' : 'Could not reach the Gemini API: no answer came. Check the internet connection, and try again.';
+    else if (some((x) => x.why === 'busy')) (status = 503), (lead = 'HTTP 503. Google’s servers are busy (“high demand”). That is on Google’s side, not a problem with your key: wait a minute and try again.');
+    else if (waits.length) (status = 429), (lead = 'HTTP 429. Too many requests: the free tier allows only a few requests per minute – wait a minute and try again.');
+    else if (some((x) => x.why === 'limit')) (status = 429), (lead = 'HTTP 429. No requests are left for today: every model that this page asks is over its limit for this key. The free tier allows each model a number of requests per day, counted per project. Go on when the service takes requests again, or use a key from another person or project.');
+    else (status = 404), (lead = 'HTTP 404. None of the models was found – check the model in the AI settings (⚙).');
+    return Object.assign(new Error(`${lead} (${all.map((x) => x.model + ' ' + told(x)).join('; ')}.)`), { status, network: !status, retryIn });
+  }
+  const stopped = () => new DOMException('Stopped', 'AbortError');
   /* ---- the real agent (live mode): what it may run, and where ---- */
   const AGENT_MAX = 15; // commands per task
   const AGENT_OUT = 3000; // characters of each command's output that the model sees
   const AGENT_TOOLS = ['minimap2', 'samtools', 'bcftools', 'bgzip', 'tabix'];
-  const AGENT_UTILS = ['ls', 'pwd', 'mkdir', 'cp', 'mv', 'rm', 'rmdir', 'touch', 'cat', 'head', 'tail', 'wc', 'sort', 'uniq', 'cut', 'tr', 'tee', 'paste', 'join', 'comm', 'seq', 'grep', 'egrep', 'zgrep', 'sed', 'awk', 'gawk', 'zcat', 'gunzip', 'md5sum', 'sha256sum', 'tree', 'find', 'basename', 'dirname', 'echo', 'printf', 'date', 'diff', 'du', 'file', 'column', 'which', 'type', 'true', 'false', 'help', 'man'];
-  const AGENT_OK = new Set(AGENT_TOOLS.concat(AGENT_UTILS));
-  /** the program names in a command line (the first word of each command in pipes and lists) */
-  function commandNames(line) {
-    const names = [];
-    let q = null, word = '', inWord = false, first = true;
-    const end = () => {
-      if (inWord && first) {
-        names.push(word);
-        first = false;
-      }
-      word = '';
-      inWord = false;
-    };
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (q) {
-        if (c === q) q = null;
-        else word += c;
-        continue;
-      }
-      if (c === "'" || c === '"') {
-        q = c;
-        inWord = true;
-      } else if (c === '\\') {
-        word += line[++i] || '';
-        inWord = true;
-      } else if (c === ' ' || c === '\t') end();
-      else if ((c === '|' || c === ';' || c === '&') && !(c === '&' && (line[i - 1] === '>' || line[i + 1] === '>'))) {
-        end();
-        first = true;
-        if (line[i + 1] === c) i++;
-      } else if ((c === '>' || c === '<') && !inWord && first) {
-        // a redirection before the command: skip its target
-        while (line[i + 1] === '>' || line[i + 1] === '&') i++;
-        while (line[i + 1] === ' ') i++;
-        while (i + 1 < line.length && !/[\s|;&]/.test(line[i + 1])) i++;
-      } else {
-        word += c;
-        inWord = true;
-      }
+  const AGENT_UTILS = ['ls', 'pwd', 'mkdir', 'cp', 'mv', 'rm', 'rmdir', 'touch', 'cat', 'head', 'tail', 'wc', 'sort', 'uniq', 'cut', 'tr', 'tee', 'paste', 'join', 'comm', 'seq', 'grep', 'egrep', 'fgrep', 'zgrep', 'sed', 'awk', 'gawk', 'zcat', 'gunzip', 'gzip', 'md5sum', 'sha256sum', 'tree', 'find', 'xargs', 'basename', 'dirname', 'realpath', 'mktemp', 'echo', 'printf', 'printenv', 'date', 'diff', 'cmp', 'du', 'stat', 'file', 'column', 'nl', 'tac', 'rev', 'fold', 'od', 'bc', 'expr', 'sleep', 'which', 'type', 'true', 'false', 'test', '[', 'read', 'help', 'man'];
+  // (words of the shell itself, which run no program)
+  const AGENT_SHELL = ['export', 'unset', 'set', 'shopt', 'local', 'declare', 'typeset', 'readonly', 'let', 'shift', 'getopts', 'mapfile', 'readarray', 'exit', 'return', 'break', 'continue', ':', 'command', 'env', 'time'];
+  // a step of the agent that has not ended after this many seconds is stopped (config.js: agentCommandSeconds)
+  const AGENT_SECONDS = Math.max(5, +CFG.agentCommandSeconds || 150);
+  const AGENT_OK = new Set(AGENT_TOOLS.concat(AGENT_UTILS, AGENT_SHELL));
+  const agentList = () => AGENT_TOOLS.concat(AGENT_UTILS).join(', ');
+  /** why the agent may not run this text ('' if it may): a command in it that the agent has not got. The names are
+      those that the shell itself reads in the text – also inside $( ), loops and pipes. Nothing of such a text is
+      run. (A name that is only known when the text runs – "$tool", the program that xargs or find -exec starts – is
+      checked when it runs: see dispatch in shell-pipe.js.) */
+  function agentRefusal(text) {
+    let names;
+    try {
+      names = MG.shellLang.commandNames(text);
+    } catch (e) {
+      return ''; // (not readable as shell: nothing of it runs, and the terminal says why)
     }
-    end();
-    return names;
-  }
-  /** why the agent may not run this command line ('' if it may) */
-  function agentRefusal(line) {
-    if (/`|\$\(/.test(line)) return 'command substitution ($( ) or backticks) does not work in this terminal.';
-    if (/<</.test(line)) return 'heredocs (<<) do not work in this terminal: write a file with printf or echo and >.';
-    if (/(^|[\s;&|])(for|while|until|if|case)\s/.test(line.replace(/'[^']*'|"[^"]*"/g, ''))) return 'loops and if do not work in this terminal: give one command at a time.';
-    const bad = commandNames(line).filter((c) => !AGENT_OK.has(c));
+    // (functions that the agent defined in an earlier step are its own)
+    let funcs = {};
+    try {
+      funcs = MG.app.term.shell._top().funcs || {};
+    } catch (e) {
+      /* no shell yet */
+    }
+    const bad = names.filter((c) => c !== '$' && !/^\d+$/.test(c) && !AGENT_OK.has(c) && !Object.prototype.hasOwnProperty.call(funcs, c)).filter((c, i, a) => a.indexOf(c) === i);
     if (!bad.length) return '';
     if (bad.includes('cd')) return 'cd is not available: the terminal stays in your folder, so use relative paths.';
-    if (bad.some((b) => b.includes('='))) return 'variables cannot be set: write the values into the command.';
-    return `${bad.map((b) => '`' + b + '`').join(', ')} ${bad.length > 1 ? 'are' : 'is'} not available to you. You can use: ${AGENT_TOOLS.concat(AGENT_UTILS).join(', ')}.`;
+    return `${bad.map((b) => '`' + b + '`').join(', ')} ${bad.length > 1 ? 'are' : 'is'} not available to you. You can use: ${agentList()}.`;
   }
-  /** the command in an agent's reply: its first bash code block, lines joined with && ('' = empty block, null = none) */
-  function agentCommand(reply) {
-    const re = /```([\w+-]*)[^\n]*\n([\s\S]*?)```/g;
+  const SHELL_FENCE = ['', 'bash', 'sh', 'shell', 'console', 'zsh', 'shell-session', 'shellscript', 'terminal', 'cmd', 'command'];
+  /** The command in an agent's reply: its first shell code block, as it was written ('' = empty block, null = none).
+      A model sometimes begins its command on the line of the fence itself –
+          ```bcftools view -H raw.vcf | wc -l
+      (gemini-3.5-flash-lite did, on 6 October 2026, and the step was taken for the report: the task ended there).
+      Such a line is the first line of the command: where a command that the agent has is followed by more words
+      – one word alone is the name of a language (```diff, ```awk, ```text) –, also after the name of a shell
+      (```bash samtools index x.bam). And sometimes the whole command stands between two fences on one line
+      (```bcftools stats raw.vcf | grep "^SN"``` – the same model, the same day). */
+  function agentStep(reply) {
+    const re = /```([^\n`]*)(?:\n([\s\S]*?)```|```)/g;
     let m;
     while ((m = re.exec(reply))) {
-      if (!['', 'bash', 'sh', 'shell', 'console', 'zsh'].includes(m[1].toLowerCase())) continue;
-      const lines = m[2]
-        .replace(/\s*\\\n\s*/g, ' ')
+      const info = m[1].trim(), words = info.split(/\s+/).filter(Boolean);
+      const shell = SHELL_FENCE.includes((words[0] || '').toLowerCase());
+      let first = '';
+      if (m[2] === undefined) {
+        // (one line between two fences: a command if it begins with one – after the name of a shell, or not)
+        if (shell && words.length > 1 && AGENT_OK.has(words[1])) first = info.slice(words[0].length).trim();
+        else if (words.length && AGENT_OK.has(words[0])) first = info;
+        else continue;
+        return { cmd: first, before: withoutCode(reply.slice(0, m.index)), after: withoutCode(reply.slice(re.lastIndex)) };
+      }
+      if (shell) {
+        if (words.length > 1 && AGENT_OK.has(words[1])) first = info.slice(words[0].length).trim();
+      } else if (words.length > 1 && AGENT_OK.has(words[0])) first = info;
+      else continue;
+      const body = m[2]
+        .replace(/\r/g, '')
         .split('\n')
-        .map((l) => l.replace(/^\s*\$\s+/, '').trim())
-        .filter((l) => l && !l.startsWith('#'));
-      return lines.join(' && ');
+        .map((l) => l.replace(/^\s*\$\s+/, ''))
+        .join('\n')
+        .trim();
+      // (before, after: what the reply says in front of the block of its command, and behind it)
+      return { cmd: first ? first + (body ? '\n' + body : '') : body, before: withoutCode(reply.slice(0, m.index)), after: withoutCode(reply.slice(re.lastIndex)) };
     }
-    return null;
+    return { cmd: null, before: '', after: '' };
   }
+  const agentCommand = (reply) => agentStep(reply).cmd;
+  /* A model sometimes goes on writing after the block of its command – its report, with what the command "showed",
+     before the command has run (gemini-3.1-flash-lite did, on 6 October 2026: "… confirmed that variants were
+     identified", and no number). The reply is a step all the same; but what stands behind the block, when it is more
+     than a remark, is not shown as the description of the step: the card says so, and the agent is told. */
+  const AGENT_AHEAD = 120; // characters behind the block from which this holds
+  const AGENT_AHEAD_TOLD = 'What you wrote after the code block was written before the command had run; it was not shown to the user. Send your report when you have read the output – without a code block.';
+  // (what the agent is told, once in a task, when a reply has a code block that is no command)
+  const AGENT_REMIND = 'Nothing was run: your reply had a code block, but not a ```bash block with a command. If you meant to run a command, send it again in a ```bash block. If that was your report, send it again without any code block.';
+  /** the commands of a block, one by one (a loop or an if … fi is one command) */
+  function agentParts(cmd) {
+    try {
+      const parts = MG.shellLang.statements(cmd, { extglob: MG.shellLang.extglobOn(MG.app.term.shell._top()) });
+      return parts.length ? parts : [cmd];
+    } catch (e) {
+      return [cmd];
+    }
+  }
+  // (for the tests)
+  MG.agentRules = { ok: AGENT_OK, tools: AGENT_TOOLS, refusal: agentRefusal, command: agentCommand, step: agentStep, parts: agentParts, seconds: AGENT_SECONDS };
   const withoutCode = (reply) => reply.replace(/```[\s\S]*?(```|$)/g, '').trim();
   const insideDir = (k, root) => k === root || k.startsWith(root + '/');
   // the agent's own folder, and /tmp, where the programs keep temporary files
@@ -323,22 +390,112 @@
     for (const [k, v] of fs.entries) if (!agentMay(k, root)) m.set(k, v);
     return m;
   }
-  function undoOutside(fs, root, snap, keep) {
-    const changed = [];
-    for (const [k, v] of snap) {
-      if (fs.entries.get(k) !== v && !keep.has(k)) {
-        fs.entries.set(k, v);
-        changed.push(k);
+  /* A file that a program wrote (BAM, .gz …) has its bytes in the programs' memory only. Two copies are taken before
+     a step of the agent runs:
+     - of the files outside the agent's folder, MG.wasm keeps one in that memory (keep) and writes it back after the
+       step, where the step changed or removed the file (putBack);
+     - of all such files – in the student's folders and in the agent's – the page holds one itself (holdBytes). If the
+       programs have to be stopped by force (a command that does not end: the time limit, or Stop pressed twice),
+       their memory is gone, and with it every file that a program wrote. Those that were there before the step are
+       then written again from the page's copies: a forced stop costs the work of that step, and nothing else. */
+  const AGENT_HOLD = 300 * 1024 * 1024; // bytes that the page holds at most (more than that: lost in a forced stop, and named)
+  async function holdBytes(fs, held) {
+    // (copies of files that are not there any more are let go)
+    const live = new Set(fs.entries.values());
+    for (const e of Array.from(held.keys())) if (!live.has(e)) held.delete(e);
+    let total = 0;
+    for (const b of held.values()) total += b.length;
+    for (const [k, v] of Array.from(fs.entries)) {
+      if (v.kind !== 'aioli' || held.has(v) || insideDir(k, '/tmp')) continue;
+      if (total + (v.size || 0) > AGENT_HOLD) continue;
+      try {
+        const bytes = await fs.readBytes(k);
+        held.set(v, bytes);
+        total += bytes.length;
+      } catch (e) {
+        console.error(e);
       }
     }
+  }
+  /** After a step: what it changed outside the agent's folder is put back; after a forced stop of the programs, the
+      files that programs had written before the step are written again.
+      snap: the entries outside the folder before the step; keep: paths the student saved in the editor meanwhile;
+      since, gen: when the step started, and MG.wasm.gen then; held: see holdBytes; before: every program-written
+      file before the step (path → entry).
+      → { changed: paths outside that were put back or removed again, lost: paths whose bytes could not be had, killed } */
+  async function undoOutside(fs, root, snap, keep, since, gen, held, before) {
+    const W = MG.wasm, changed = [], lost = [], back = [];
+    const killed = !!W && W.gen !== gen;
+    // 1. what the step made outside the folder goes
     for (const k of Array.from(fs.entries.keys())) {
       if (!agentMay(k, root) && !snap.has(k) && !keep.has(k)) {
         fs.entries.delete(k);
         changed.push(k);
       }
     }
-    changed.forEach((k) => fs._changed(k, !fs.entries.has(k) ? 'remove' : fs.entries.get(k).kind === 'dir' ? 'mkdir' : 'write'));
-    return changed;
+    // 2. files that the step copied or moved, and that stay, get bytes of their own first
+    if (W && W.ready && W.settle && !killed) {
+      try {
+        await W.settle(fs);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    // 3. what was there before is put back
+    for (const [k, v] of snap) {
+      if (keep.has(k)) continue;
+      const now = fs.entries.get(k);
+      if (v.kind === 'aioli' && killed) {
+        // (whatever is there now is not the student's file: it goes, and the file comes back below)
+        if (now) {
+          fs.entries.delete(k);
+          changed.push(k);
+        }
+        continue;
+      }
+      if (now === v) continue;
+      fs.entries.set(k, v);
+      changed.push(k);
+      if (v.kind !== 'aioli' || !W || !W.putBack) continue;
+      let ok = false;
+      try {
+        ok = await W.putBack(k, v, since);
+      } catch (e) {
+        console.error(e);
+      }
+      if (!ok) {
+        fs.entries.delete(k);
+        back.push([k, v]);
+      }
+    }
+    // 4. After a forced stop: the files that programs had written before the step. Outside the folder: all of them.
+    //    Inside it: those that were still there, unchanged, when the programs were stopped – a file that the step
+    //    itself had removed or written anew stays gone.
+    if (killed && before) {
+      const atStop = W.lostEntries || new Map();
+      for (const [k, v] of before) {
+        if (keep.has(k) || fs.entries.has(k)) continue;
+        if (agentMay(k, root) && atStop.get(k) !== v) continue;
+        back.push([k, v]);
+      }
+    }
+    for (const [k, v] of back) {
+      const bytes = held ? held.get(v) : null;
+      let ok = false;
+      if (bytes && W && W.writeBytes) {
+        try {
+          fs.mkdirp(MG.path.dirname(k));
+          await W.writeBytes(fs, k, bytes);
+          fs.touch(k, v.mtime); // (the file has the time it had: Snakemake compares the times of files)
+          ok = true;
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      if (!ok) lost.push(k);
+    }
+    changed.concat(lost).forEach((k) => fs._changed(k, !fs.entries.has(k) ? 'remove' : fs.entries.get(k).kind === 'dir' ? 'mkdir' : 'write'));
+    return { changed, lost, killed };
   }
   /** a pause that the Stop button can cut short */
   const pause = (ms, signal) =>
@@ -425,7 +582,7 @@
       this.sugg = h('div.ai-sugg');
       this.input = h('textarea.ai-input', { rows: 2, 'aria-label': 'Message to the AI assistant' });
       this.sendBtn = h('button.btn.primary.ai-send', { type: 'button', title: 'Send (Enter)', html: MG.icon('send') + '<span>Send</span>' });
-      this.sendBtn.addEventListener('click', () => (this._abort ? this._abort.abort() : this.send()));
+      this.sendBtn.addEventListener('click', () => (this._abort ? this.stopNow() : this.send()));
       this.input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
           e.preventDefault();
@@ -777,6 +934,14 @@
       bus.emit('agent:file', { path, run: a.file });
       this.scroll('agent');
     }
+    /** The Stop button. While the real agent runs a command in the terminal, the first press lets the program that
+        is running finish and skips the rest; a second press stops that program by force (see stop in terminal.js:
+        what programs had written is then lost). */
+    stopNow() {
+      if (this._abort) this._abort.abort();
+      const T = MG.app.term;
+      if (this._agentLive && T && T.busy) T.stop();
+    }
     /** run a command in the student's own terminal and capture its output */
     async termRun(cmd, opts) {
       const T = MG.app.term;
@@ -865,24 +1030,24 @@
 
     /* ---------------- a real agent (live mode) ---------------- */
     liveAgentIntro() {
-      return `**Live mode:** a task you **type** goes to a **real agent** – ${modelOf(this.settings)} runs commands in your terminal, one at a time, in a folder of its own (\`~/ai-agent/live-…\`), with copies of the course data. You see every command and its output; each task you type is a new run, in a new folder. The tasks under this box stay simulated: chapter 8 is written for them.`;
+      return `**Live mode:** a task you **type** goes to a **real agent** – ${modelOf(this.settings)} runs commands in your terminal, one at a time, in a folder of its own (\`~/ai-agent/live-…\`), with copies of the course data. You see every command and its output; each task you type is a new run, in a new folder. While it works the terminal is locked for typing; **Stop** ends the task. The tasks under this box stay simulated: chapter 8 is written for them.`;
     }
     agentPrompt(run) {
       return [
         'You are an AI agent in a bioinformatics practical for MSc students. You carry out the user’s task by running shell commands, one at a time, in a Linux-like terminal that runs inside their web browser.',
         '',
         'How to work:',
-        '- In each reply, say in one or two short sentences what you will do next and why, then give ONE command in a ```bash code block, and stop. You will then get its exit status and output.',
+        '- In each reply, say in one or two short sentences what you will do next and why, then give ONE step in a ```bash code block – a command, or a few that belong together, one per line – and stop. You will then get the exit status and the output. If a command of the block fails, the ones after it are not run.',
         '- Base each next step on the output you got. If a command fails, read the error and change your approach.',
         '- Do not ask the user questions – nobody can answer during the task. Make sensible choices, say which, and carry on.',
-        `- You can run at most ${AGENT_MAX} commands.`,
+        `- You can take at most ${AGENT_MAX} steps.`,
         '- When the task is done, or cannot be done, reply WITHOUT a code block: the commands you ran (in short), the files you made, and what the results show. Report only what the outputs showed – never invent results, versions or files.',
         '',
         'Your environment:',
         `- Your folder is ${run} and the terminal is already in it. Use relative paths and stay inside it: cd is not available, and changes to files outside it are undone.`,
         '- input/NA12878_R1.fastq and input/NA12878_R2.fastq: paired-end Illumina exome reads of the reference sample NA12878, only from the regions of CYP2C19 and CYP2C9. input/reference.fa: two slices of the hg19 human reference (chr10), named human_CYP2C19 and human_CYP2C9.',
-        `- Programs: minimap2 2.22, samtools 1.17, bcftools 1.10 (with its own htslib 1.10), bgzip and tabix (htslib 1.17), and ${AGENT_UTILS.join(', ')}. Nothing else: no bwa, GATK, FreeBayes, fastqc, Python, R, Snakemake, conda, bash scripts or internet access.`,
-        '- Shell: pipes (|), &&, ||, ;, redirection (> >> < 2> 2>&1), quotes and * globs work. Loops, if, $( ), backticks and heredocs do not.',
+        `- Programs: minimap2 2.22, samtools 1.17, bcftools 1.10 (with its own htslib 1.10), bgzip and tabix (htslib 1.17), and ${AGENT_UTILS.join(', ')}. Nothing else: no bwa, GATK, FreeBayes, fastqc, Python, R, Snakemake, conda, bash scripts or internet access. A command that has not ended after ${AGENT_SECONDS} seconds is stopped.`,
+        '- Shell: bash-like – pipes (|), &&, ||, ;, redirection (> >> < 2> 2>&1), quotes, globs, variables, $( ), $(( )), for / while / if, and here-documents work. cd does not, and there are no background jobs (&).',
         `- Each command’s output is shortened to its last ${AGENT_OUT} characters.`
       ].join('\n');
     }
@@ -894,12 +1059,20 @@
           const res = await this.streamLive(hist, (d) => {
             text += d;
             onText(text);
-          }, signal, { settings: this.settings, key: this.key, system: this.agentPrompt(run) }, note);
+          }, signal, { settings: this.settings, key: this.key, system: this.agentPrompt(run), onReset: () => {
+            text = '';
+            onText('');
+          } }, note);
           return { text, model: res.model };
         } catch (e) {
-          if (e.status !== 429 || waited >= 3) throw e;
-          for (let t = Math.round(Math.min(90, Math.max(5, e.retryAfter || 30))); t > 0; t--) {
-            note(`The free tier allows only a few requests per minute – waiting ${t} s, then asking again (Stop ends the task)…`);
+          // no model answered. Waiting helps when a limit per minute is reached, the servers are busy or the connection
+          // gave no answer (the error says after how many seconds: retryIn) – up to three times for one reply. It does
+          // not help when every model is over its limit for today, or the key is not accepted: the task ends at once.
+          const wait = e.name !== 'AbortError' && e.retryIn > 0 ? Math.round(Math.min(90, Math.max(5, e.retryIn))) : 0;
+          if (wait && waited >= 3) e.message += (e.status === 429 ? ' The page waited three times and the limit is still reached – a key that many people are using at once, perhaps.' : e.status ? ' The page waited three times and asked again: the service is still busy.' : ' The page waited three times and asked again: still no answer.') + ' Go on later' + (e.status ? ', or use a key from another person or project (limits are counted per project, not per key).' : '.');
+          if (!wait || waited >= 3) throw e;
+          for (let t = wait; t > 0; t--) {
+            note(`${e.status === 429 ? 'The service allows only a few requests per minute' : e.status ? 'The service is busy' : 'No answer came from the service'} – waiting ${t} s, then asking again (Stop ends the task)…`);
             await pause(1000, signal);
           }
           note('');
@@ -939,6 +1112,19 @@
       const hist = [{ role: 'user', content: task }];
       const models = [];
       let cmds = 0, final = '', outcome = 'done';
+      // The agent works in a new shell – the student's variables, functions and options are not its own, and it
+      // leaves none behind – with the programs it was told it has, whatever conda environment is active; and nobody
+      // else can type into the terminal meanwhile.
+      const T = MG.app.term;
+      for (let i = 0; i < 600 && T.busy; i++) await sleep(100);
+      const shellState = T.shell.saveState ? T.shell.saveState() : null;
+      if (T.shell.freshState) T.shell.freshState();
+      const jobTools = T.shell._jobTools;
+      T.shell._jobTools = AGENT_TOOLS.slice();
+      const held = new Map(); // the page's copies of program-written files, for a forced stop: see holdBytes
+      if (T.lock) T.lock('The agent is using the terminal.');
+      this._agentLive = true;
+      let reminded = false;
       try {
         await this.termRun('cd ' + fs.pretty(run), { agent: true });
         for (;;) {
@@ -952,19 +1138,29 @@
           });
           note('');
           if (!models.includes(model)) models.push(model);
-          const cmd = agentCommand(text);
+          const step = agentStep(text), cmd = step.cmd;
+          // A reply with a code block that is no command (```text, ```python …). The rule the agent was given is that
+          // a report has no code block: once in a task it is told that nothing was run, and asked which it meant.
+          if (cmd == null && /```/.test(text) && !reminded && cmds < AGENT_MAX) {
+            reminded = true;
+            li.remove();
+            hist.push({ role: 'assistant', content: text }, { role: 'user', content: AGENT_REMIND });
+            continue;
+          }
           if (cmd == null || cmds >= AGENT_MAX) {
             // no command: this is the agent's report
             li.remove();
-            final = cmd == null ? text : withoutCode(text) + `\n\n*(Stopped at the limit of ${AGENT_MAX} commands.)*`;
+            final = cmd == null ? text : withoutCode(text) + `\n\n*(Stopped at the limit of ${AGENT_MAX} steps.)*`;
             break;
           }
-          say.textContent = withoutCode(text);
+          // (the description of the step: what stands in front of its block – see AGENT_AHEAD)
+          const ahead = step.before && step.after.length > AGENT_AHEAD;
+          say.textContent = ahead ? step.before : withoutCode(text);
           say.classList.remove('muted');
           cmds++;
           const refused = cmd ? agentRefusal(cmd) : 'the code block was empty: give one command.';
           let result;
-          li.appendChild(h('div', h('code', cmd || '(empty)')));
+          li.appendChild(h('div', h('code.ag-cmd', cmd || '(empty)')));
           if (refused) {
             li.classList.add('bad');
             li.querySelector('.ag-ic').textContent = '⛔';
@@ -972,28 +1168,92 @@
             result = 'Not run: ' + refused;
           } else {
             // run it in the student's terminal; anything it changes outside the agent's folder is put back
+            const W = MG.wasm;
             const snap = outsideSnapshot(fs, run);
+            if (W && W.keep) {
+              try {
+                await W.keep(Array.from(snap));
+              } catch (e) {
+                console.error(e); // without the copies, only files that the command leaves alone can be put back
+              }
+            }
+            const before = new Map();
+            for (const [p, e] of fs.entries) if (e.kind === 'aioli' && !insideDir(p, '/tmp')) before.set(p, e);
+            try {
+              await holdBytes(fs, held);
+            } catch (e) {
+              console.error(e);
+            }
+            const since = Date.now(), gen = W ? W.gen : 0;
             const saved = new Set();
             const off = bus.on('editor:save', (d) => saved.add(d.path));
-            let r;
+            // a command that has not ended after AGENT_SECONDS is stopped by force. (The Stop button: see stopNow.)
+            let timedOut = false, again = null;
+            const timer = setTimeout(() => {
+              timedOut = true;
+              T.stop();
+              T.stop(true);
+              // (a program that was only just being started is not "running" yet at that moment: again, until the command has ended)
+              again = setInterval(() => T.stop(true), 500);
+            }, AGENT_SECONDS * 1000);
+            const r = { code: 0, text: '' };
+            const notRun = [], refusedNow = [];
+            let ended = null;
             try {
-              r = await this.termRun(cmd, { agent: true });
+              // the commands of the block, one after the other: what follows a command that failed is not run
+              const parts = agentParts(cmd);
+              for (let k = 0; k < parts.length; k++) {
+                T.shell.endedBy = null;
+                T.shell.exitTyped = false;
+                // (while a command of the agent runs, the shell starts only the programs that the agent has)
+                T.shell._agentOnly = AGENT_OK;
+                T.shell._agentRefused = refusedNow;
+                let one;
+                try {
+                  one = await this.termRun(parts[k], { agent: true });
+                } finally {
+                  T.shell._agentOnly = null;
+                  T.shell._agentRefused = null;
+                }
+                r.text += one.text;
+                r.code = one.code;
+                // (exit, or the agent's own set -e / set -u, ended the command where a script would have ended: so does the block)
+                ended = T.shell.exitTyped ? 'exit' : T.shell.endedBy || null;
+                T.shell.exitTyped = false;
+                if (one.code !== 0 || ended || timedOut || signal.aborted) {
+                  notRun.push(...parts.slice(k + 1));
+                  break;
+                }
+              }
             } finally {
+              clearTimeout(timer);
+              clearInterval(again);
               off();
             }
-            const undone = undoOutside(fs, run, snap, saved);
+            const u = await undoOutside(fs, run, snap, saved, since, gen, held, before);
+            const undone = u.changed, killed = u.killed;
+            // (after a forced stop: the program-written files of this folder that are not there any more – the step's own)
+            const gone = killed ? Array.from(before.keys()).filter((p) => insideDir(p, run) && !fs.entries.has(p)).map((p) => p.slice(run.length + 1)) : [];
+            const lostOut = u.lost.filter((p) => !insideDir(p, run));
             if (fs.cwd !== run) await this.termRun('cd ' + fs.pretty(run), { agent: true });
-            li.classList.toggle('bad', r.code !== 0 || undone.length > 0);
-            li.querySelector('.ag-ic').innerHTML = r.code === 0 && !undone.length ? '✓' : '✗';
+            li.classList.toggle('bad', r.code !== 0 || undone.length > 0 || timedOut);
+            li.querySelector('.ag-ic').innerHTML = r.code === 0 && !undone.length && !timedOut ? '✓' : '✗';
             const lines = r.text.replace(/\s+$/, '').split('\n');
             const excerpt = (lines.length > 14 ? ['…'].concat(lines.slice(-14)) : lines).join('\n');
             li.appendChild(h('details.ag-out', h('summary', `output (exit status ${r.code})`), h('pre', excerpt || '(no output)')));
             if (undone.length) li.appendChild(h('small.muted', 'Changes outside its folder were undone: ' + undone.slice(0, 4).map((k) => fs.pretty(k)).join(', ') + (undone.length > 4 ? ' …' : '')));
+            if (refusedNow.length) li.appendChild(h('small.muted', 'not available to the agent: ' + refusedNow.join(', ')));
+            if (timedOut) li.appendChild(h('small.muted', `Stopped by the page: it ran for more than ${AGENT_SECONDS} seconds.`));
+            if (killed) li.appendChild(h('small.muted', 'The programs had to be stopped by force, and were started again. What programs wrote in this step is gone; the files they had written before are back as they were.' + (lostOut.length ? ' Lost from your folders (too large to hold a copy of): ' + lostOut.slice(0, 4).map((k) => fs.pretty(k)).join(', ') + (lostOut.length > 4 ? ` and ${lostOut.length - 4} more` : '') + '. Run your pipeline again to make them.' : '')));
             const out = r.text.trim();
-            result = `Exit status ${r.code}.` + (undone.length ? ` Your changes outside your folder were undone: ${undone.slice(0, 6).map((k) => fs.pretty(k)).join(', ')}.` : '') + '\nOutput' + (out.length > AGENT_OUT ? ' (last ' + AGENT_OUT + ' characters)' : '') + ':\n```text\n' + (out.slice(-AGENT_OUT) || '(no output)') + '\n```';
+            result = `Exit status ${r.code}.` + (timedOut ? ` The command was stopped: it ran for more than ${AGENT_SECONDS} seconds.` : '') + (killed ? ' The programs had to be stopped by force: what programs wrote in this step is gone; the files from earlier steps are as they were.' + (gone.length ? ` Not there any more: ${gone.slice(0, 6).join(', ')}.` : '') : '') + (refusedNow.length ? ` ${refusedNow.map((b) => '`' + b + '`').join(', ')} ${refusedNow.length > 1 ? 'are' : 'is'} not available to you. You can use: ${agentList()}.` : '') + (notRun.length ? ` Not run, because the command before ${r.code !== 0 ? 'failed' : ended === 'exit' ? 'was exit' : 'ended the block'}: ${notRun.join(' ; ').slice(0, 300)}.` : '') + (undone.length ? ` Your changes outside your folder were undone: ${undone.slice(0, 6).map((k) => fs.pretty(k)).join(', ')}.` : '') + '\nOutput' + (out.length > AGENT_OUT ? ' (last ' + AGENT_OUT + ' characters)' : '') + ':\n```text\n' + (out.slice(-AGENT_OUT) || '(no output)') + '\n```';
           }
           li.classList.remove('run');
-          if (cmds >= AGENT_MAX) result += `\n\nYou have used all ${AGENT_MAX} commands. Reply now without a code block: what you did, which files you made and what the results show.`;
+          if (ahead) {
+            li.appendChild(h('small.muted', 'The model wrote more after this step – before the step had run. That text is not shown here: a report can only come after the result.'));
+            result += '\n\n' + AGENT_AHEAD_TOLD;
+          }
+          if (cmds >= AGENT_MAX) result += `\n\nYou have used all ${AGENT_MAX} steps. Reply now without a code block: what you did, which files you made and what the results show.`;
           hist.push({ role: 'assistant', content: text }, { role: 'user', content: result });
           if (signal.aborted) throw new DOMException('Stopped', 'AbortError');
         }
@@ -1009,12 +1269,19 @@
       } finally {
         note('');
         if (fs.cwd !== back && fs.isDir(back)) await this.termRun('cd ' + fs.pretty(back), { agent: true });
+        this._agentLive = false;
+        if (T.unlock) T.unlock();
+        T.shell._jobTools = jobTools;
+        if (shellState && T.shell.restoreState) T.shell.restoreState(shellState);
+        held.clear();
+        if (MG.wasm && MG.wasm.dropKept) MG.wasm.dropKept().catch(() => {});
+        T._renderPrompt();
         card.querySelector('.ag-head b').textContent = (outcome === 'done' ? 'Real agent · finished' : outcome === 'stopped' ? 'Real agent · stopped' : 'Real agent · error') + ` · ${fs.pretty(run)}`;
         const body = h('div.ai-body');
         card.appendChild(body);
         this.fill(body, final || '(no reply)');
         const secs = Math.round((performance.now() - t0) / 1000);
-        card.appendChild(h('div.ai-badge', `real agent · ${models.join(', ') || modelOf(this.settings)} · ${cmds} command${cmds === 1 ? '' : 's'} · ${secs >= 60 ? Math.floor(secs / 60) + ' min ' : ''}${secs % 60} s`));
+        card.appendChild(h('div.ai-badge', `real agent · ${models.join(', ') || modelOf(this.settings)} · ${cmds} step${cmds === 1 ? '' : 's'} · ${secs >= 60 ? Math.floor(secs / 60) + ' min ' : ''}${secs % 60} s`));
         this.msgs.agent.push({ role: 'assistant', content: final });
         this.busy = false;
         this._abort = null;
@@ -1098,7 +1365,7 @@
         'You are an AI coding assistant embedded in a browser-based practical for MSc bioinformatics students on pipelines and reproducibility (Claerbout’s principle: an article about a computational result is only advertising; the scholarship is the complete software environment and instructions – and the data – that produced it).',
         'The students turn a variant-calling analysis (NA12878 exome reads around CYP2C19 and CYP2C9, two slices of hg19) into a Snakemake pipeline, then build the same workflow in a Galaxy-style workflow editor. For most of them this is their first contact with Python.',
         '',
-        'Environment (all in the web browser): a bash-like terminal; Snakemake ' + ((v.snakemake || '9.27.0')) + ' (a faithful browser re-implementation); Python ' + (v.python || '3.13') + ' with pandas, numpy, matplotlib and pyyaml (Pyodide); minimap2 2.22, samtools 1.17, bcftools 1.10 (with htslib 1.10), bgzip/tabix (htslib 1.17) and Graphviz dot, compiled to WebAssembly; a conda model with environments "base" and "pipelines". No internet access from the terminal or Python, and no other programs (no bwa, gatk, fastqc, git, docker). Shell: no loops, no command substitution.',
+        'Environment (all in the web browser): a bash-like terminal; Snakemake ' + ((v.snakemake || '9.27.0')) + ' (a faithful browser re-implementation); Python ' + (v.python || '3.13') + ' with pandas, numpy, matplotlib and pyyaml (Pyodide); minimap2 2.22, samtools 1.17, bcftools 1.10 (with htslib 1.10), bgzip/tabix (htslib 1.17) and Graphviz dot, compiled to WebAssembly; a conda model with environments "base" and "pipelines". No internet access from the terminal or Python, and no other programs (no bwa, gatk, fastqc, git, docker). Shell: bash-like – loops, if, $( ), $(( )), ${…}, functions and here-documents work; there are no background jobs (&), and every program runs on one thread. Snakemake runs the command of a rule in the strict mode of bash (set -euo pipefail), as the real program does.',
         'Project folder: ~/cyp2c19-pipeline with data/raw/NA12878_R1.fastq, NA12878_R2.fastq, reference.fa (+ .fai), config/config.yaml, workflow/Snakefile, workflow/envs/, workflow/scripts/, results/, logs/.',
         '',
         'How to answer: be brief and friendly; explain in plain language and explain Python syntax when you use it; put Snakefile code in ```snakemake blocks, notebook code in ```python blocks and terminal commands in ```bash blocks; use relative paths; never invent program options – if unsure, tell the student to check `PROGRAM --help`. Do not claim to have run anything or seen results you were not shown. Help the student learn rather than just handing over answers to the practical questions.'
@@ -1149,13 +1416,15 @@
             this.scroll('chat');
           },
           this._abort.signal,
-          null,
+          { onReset: () => (text = '') },
           (note) => {
             if (!text) body.innerHTML = `<div class="muted" style="font-size:0.85em;margin-bottom:0.35em">${esc(note)}</div><span class="ai-typing"><i></i><i></i><i></i></span>`;
           }
         );
-        this.fill(body, text || '(no reply)');
-        const via = res.skipped.length ? ` (${res.skipped.map((x) => x.model + ' ' + skipWord(x.status)).join(', ')})` : '';
+        // a reply with nothing in it is not kept as a turn of the conversation: it is reported, and the question can be asked again
+        if (!text.trim()) throw Object.assign(new Error(`${res.model} sent an empty reply. Ask again – a second try usually gets an answer.`), { empty: true });
+        this.fill(body, text);
+        const via = res.skipped.length ? ` (${res.skipped.map((x) => x.model + ' ' + skipWord(x)).join(', ')})` : '';
         b.appendChild(h('div.ai-badge', { html: `live · ${esc(res.model + via)} · ${((performance.now() - t0) / 1000).toFixed(1)} s` }));
         this.msgs.chat.push({ role: 'assistant', content: text });
         bus.emit('ai:answer', { entry: 'live', mode: 'live' });
@@ -1164,7 +1433,7 @@
           this.fill(body, (text || '') + '\n\n*(stopped)*');
           if (text) this.msgs.chat.push({ role: 'assistant', content: text });
         } else {
-          this.fill(body, '**The AI service returned an error.**\n\n' + e.message);
+          this.fill(body, (e.empty ? '' : '**The AI service returned an error.**\n\n') + e.message);
           b.classList.add('err');
         }
       } finally {
@@ -1173,15 +1442,26 @@
         this.sendBtn.innerHTML = MG.icon('send') + '<span>Send</span>';
       }
     }
-    /* Stream an answer from the chosen service. For Gemini, when a model is busy (HTTP 5xx), over
-       its free-tier limit (429) or not found (404), the fallback models are asked in turn; the last
-       model asked (for other services, the only one) gets a second try after a short pause if it is
-       busy. Returns { model, skipped }: the model that answered and the ones that could not. */
+    /* Stream an answer.
+       Gemini: the chosen model is asked first, then the fallback models in their order – but not a model that the
+       page knows to be busy, silent or over a limit (the memory above). A model that is busy (HTTP 5xx), over a
+       limit (429), not found (404) or gives no answer (the connection fails, or nothing comes for a minute) is
+       noted, and the next one is asked. An answer that breaks off part-way is taken back (cfg.onReset) and the
+       question goes to the next model. When no model is left that is not at rest, the two that have rested longest
+       of those that were only busy or silent get another chance. Two models in a row that give no answer end the
+       request: that is the connection, not the models.
+       Other services: one model; if it is busy, a second try after a short pause.
+       → { model, skipped }: the model that answered, and what kept others from it – the chosen model if it is at
+         rest, and every model that failed in this request.
+       When nothing answers, the error says what each model said. Its .status is 429 (limits), 503 (busy) or not set
+       (no answer came); .retryIn is the number of seconds after which asking again can help – not set when it
+       cannot (a wrong key; every model over its limit for today). */
     async streamLive(messages, onDelta, signal, cfg, onNote) {
       const s = (cfg && cfg.settings) || this.settings;
-      const key = cfg ? cfg.key : this.key;
+      const key = cfg && cfg.key != null ? cfg.key : this.key;
       const system = (cfg && cfg.system) || this.systemPrompt();
       const note = onNote || (() => {});
+      const reset = cfg && cfg.onReset;
       // turns must alternate between user and assistant: join neighbours of the same role
       messages = messages.reduce((out, m) => {
         const last = out[out.length - 1];
@@ -1189,149 +1469,247 @@
         else out.push({ role: m.role, content: m.content });
         return out;
       }, []);
-      const gemini = s.provider === 'gemini';
-      const chain = gemini ? [geminiModelOf(s)].concat(GEMINI_FALLBACKS.filter((m, i, a) => a.indexOf(m) === i && m !== geminiModelOf(s))) : [modelOf(s)];
-      const skipped = [];
-      let first = null;
-      for (let i = 0; i < chain.length; i++) {
+      if (s.provider !== 'gemini') {
+        const model = modelOf(s);
         for (let attempt = 1; ; attempt++) {
           let started = false;
           try {
-            await this.streamOnce(s, key, chain[i], messages, (d) => {
+            await this.streamOnce(s, key, model, messages, (d) => {
               started = true;
               onDelta(d);
             }, signal, system);
-            return { model: chain[i], skipped };
+            return { model, skipped: [] };
           } catch (e) {
-            // only an HTTP error that came before any text is worth another try
-            if (e.name === 'AbortError' || started || !e.status) throw e;
-            const busy = BUSY.includes(e.status);
-            const last = i === chain.length - 1;
-            if (i === 0 && attempt === 1) first = e;
-            // "high demand" usually lasts minutes: go straight to the next model …
-            if (gemini && !last && (busy || e.status === 429 || e.status === 404)) {
-              skipped.push({ model: chain[i], status: e.status });
-              note(`${chain[i]} ${e.status === 404 ? 'was not found' : e.status === 429 ? 'is over its free-tier limit' : 'is busy'} – asking ${chain[i + 1]} instead…`);
-              break;
-            }
-            // … and give the last one a second try after a short pause
-            if (last && busy && attempt === 1) {
-              note(`${chain[i]} is busy – trying again…`);
+            if (e.name !== 'AbortError' && !started && BUSY.includes(e.status) && attempt === 1) {
+              note(`${model} is busy – trying again…`);
               await pause(1500 + Math.random() * 1500, signal);
               continue;
             }
-            // nothing answered: report the chosen model's error, and what the others said
-            if (i === 0) throw e;
-            first.message += ` (Also tried: ${skipped.slice(1).map((x) => x.model + ' – HTTP ' + x.status).concat(chain[i] + ' – HTTP ' + e.status).join('; ')}.)`;
-            throw first;
+            if (e.status === 429 && !started) e.retryIn = Math.round(Math.min(90, Math.max(5, e.retryAfter || 30)));
+            throw e;
           }
         }
+      }
+      const chosen = geminiModelOf(s);
+      const chain = [chosen].concat(FALLBACKS.filter((m, i, a) => a.indexOf(m) === i && m !== chosen));
+      if (restKey !== key) {
+        // another key is another project, with limits of its own
+        REST.clear();
+        restKey = key;
+      }
+      try {
+        if (navigator.onLine === false) throw Object.assign(new Error('This browser is offline. Connect it to the internet, and try again.'), { network: true, retryIn: RETRY });
+        const said = new Map(); // what each model said: in this request, or when it was last asked and is still at rest
+        chain.forEach((m) => resting(m) && said.set(m, REST.get(m)));
+        const failed = [];
+        let queue = chain.filter((m) => !said.has(m));
+        let again = false, silent = 0;
+        for (;;) {
+          if (!queue.length && !again) {
+            again = true;
+            queue = chain.filter((m) => said.has(m) && !failed.includes(said.get(m)) && (said.get(m).why === 'busy' || said.get(m).why === 'noanswer')).sort((a, b) => said.get(a).until - said.get(b).until).slice(0, 2);
+          }
+          if (!queue.length) break;
+          const model = queue.shift();
+          const before = failed[failed.length - 1];
+          if (before) note(`${before.model} ${before.broke ? 'broke off' : told(before, true)} – asking ${model} instead…`);
+          let started = false;
+          try {
+            await this.streamOnce(s, key, model, messages, (d) => {
+              started = true;
+              onDelta(d);
+            }, signal, system);
+            REST.delete(model);
+            const first = model !== chosen && said.get(chosen);
+            return { model, skipped: (first && !failed.includes(first) ? [first] : []).concat(failed).map((x) => ({ model: x.model, why: x.broke ? 'broke' : x.why, daily: x.daily })) };
+          } catch (e) {
+            if (e.name === 'AbortError') throw e;
+            const why = e.network ? 'noanswer' : e.status === 404 ? 'notfound' : e.status === 429 ? 'limit' : BUSY.includes(e.status) ? 'busy' : '';
+            // an error of another kind (the key, the request itself) – or an answer that broke off and cannot be taken back
+            if (!why || (started && !reset)) throw e;
+            if (started) reset();
+            const was = REST.get(model);
+            const x = { model, why, broke: started, status: e.status, text: e.message, at: Date.now(), until: Infinity };
+            if (why === 'limit') {
+              const wait = e.retryAfter > 0 ? Math.min(86400, e.retryAfter) : e.daily ? 3600 : 60;
+              x.daily = !!e.daily || wait > 900;
+              x.limit = e.limit;
+              x.until = Date.now() + (wait + 1) * 1000;
+            } else if (why === 'busy') {
+              // busy again soon after its rest: the rest is twice as long (2, 4, 8, at most 15 minutes)
+              x.n = was && was.why === 'busy' && Date.now() - was.until < 600000 ? was.n + 1 : 1;
+              x.until = Date.now() + Math.min(900, BUSY_REST * 2 ** (x.n - 1)) * 1000;
+            } else if (why === 'noanswer') x.until = Date.now() + SILENT_REST * 1000;
+            REST.set(model, x);
+            said.set(model, x);
+            failed.push(x);
+            silent = why === 'noanswer' ? silent + 1 : 0;
+            if (silent >= 2) break;
+          }
+        }
+        throw noAnswer(chain.map((m) => said.get(m)).filter(Boolean), silent >= 2);
+      } finally {
+        if (this.showStatus) this.showStatus();
       }
     }
-    /** one request: the answer is passed to onDelta as it arrives; HTTP errors carry .status */
+    /** one request; the answer is passed to onDelta as it arrives.
+        An error that the service reports carries .status – and for "too many requests" (429) .retryAfter (seconds)
+        and, when the service names a limit per day, .daily and .limit. An answer that does not come – the connection
+        fails or breaks off, or (Gemini) nothing arrives for a minute (aiWaitSeconds) – carries .network. */
     async streamOnce(s, key, model, messages, onDelta, signal, system) {
-      let r;
-      if (s.provider === 'anthropic') {
-        r = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-          body: JSON.stringify({ model: anthropicModelOf(s), max_tokens: 2000, system, messages, stream: true }),
-          signal
-        }).catch((e) => {
-          if (e.name === 'AbortError') throw e;
-          throw new Error('Could not reach the Anthropic API (' + e.message + '). Check the internet connection.');
-        });
-      } else if (s.provider === 'gemini') {
-        // Google's Gemini API (generateContent, streamed as server-sent events); the whole conversation is sent each time
-        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: system }] },
-            contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
-          }),
-          signal
-        }).catch((e) => {
-          if (e.name === 'AbortError') throw e;
-          throw new Error('Could not reach the Gemini API (' + e.message + '). Check the internet connection.');
-        });
-      } else {
-        const base = (s.baseURL || '').replace(/\/+$/, '');
-        r = await fetch(base + '/chat/completions', {
-          method: 'POST',
-          headers: Object.assign({ 'content-type': 'application/json' }, key ? { authorization: 'Bearer ' + key } : {}),
-          body: JSON.stringify({ model: s.openaiModel, stream: true, messages: [{ role: 'system', content: system }].concat(messages) }),
-          signal
-        }).catch((e) => {
-          if (e.name === 'AbortError') throw e;
-          throw new Error('Could not reach ' + base + ' (' + e.message + '). Check the address; the service must allow requests from web pages (CORS).');
-        });
-      }
-      if (!r.ok) {
-        let detail = '';
-        let reason = '';
-        let retryAfter = 0;
-        try {
-          const j = await r.json();
-          detail = (j.error && (j.error.message || j.error.type)) || JSON.stringify(j).slice(0, 300);
-          reason = (j.error && ((j.error.details || []).map((d) => d.reason).filter(Boolean)[0] || j.error.status)) || '';
-          const ri = j.error && (j.error.details || []).find((d) => /RetryInfo$/.test(d['@type'] || ''));
-          if (ri && ri.retryDelay) retryAfter = parseFloat(ri.retryDelay) || 0;
-        } catch (e) {
-          detail = r.statusText;
-        }
-        const badKey = r.status === 401 || r.status === 403 || reason === 'API_KEY_INVALID';
-        const gem = s.provider === 'gemini';
+      const gem = s.provider === 'gemini';
+      const base = (s.baseURL || '').replace(/\/+$/, '');
+      if (signal && signal.aborted) throw stopped();
+      // the request ends when the user presses Stop – or when the service has said nothing for too long
+      const ac = new AbortController();
+      const onStop = () => ac.abort();
+      if (signal) signal.addEventListener('abort', onStop, { once: true });
+      const quiet = gem ? WAIT() * 1000 : 0;
+      let timer = null, silent = false, bytes = 0;
+      const arm = () => {
+        clearTimeout(timer);
+        if (quiet)
+          timer = setTimeout(() => {
+            silent = true;
+            ac.abort();
+          }, quiet);
+      };
+      /* why the answer did not come: the user's Stop, the service's silence, or the connection */
+      const lost = (e) => {
+        if (signal && signal.aborted) return stopped();
+        if (silent) return Object.assign(new Error(`${model} ${bytes ? 'stopped in the middle of its reply and said nothing more' : 'gave no answer'} for ${Math.round(quiet / 1000)} seconds.`), { network: true, silent: true });
+        if (e.name === 'AbortError') return e;
+        const where = gem ? 'the Gemini API' : s.provider === 'anthropic' ? 'the Anthropic API' : base;
+        return Object.assign(new Error(bytes ? `The connection to ${where} broke off in the middle of the reply (${e.message}).` : `Could not reach ${where} (${e.message}). ${s.provider === 'openai' ? 'Check the address; the service must allow requests from web pages (CORS).' : 'Check the internet connection.'}`), { network: true });
+      };
+      /* an error that the service reports: as the status of its answer, or (Gemini) inside an answer that had begun */
+      const refused = (status, j, statusText, retryHeader) => {
+        const err = (j && j.error) || null;
+        const det = err && Array.isArray(err.details) ? err.details.filter(Boolean) : [];
+        const detail = j ? (err && (err.message || err.type)) || JSON.stringify(j).slice(0, 300) : statusText || '';
+        const reason = err ? det.map((d) => d.reason).filter(Boolean)[0] || err.status || '' : '';
+        const ri = det.find((d) => /RetryInfo$/.test(d['@type'] || ''));
+        const retryAfter = (ri && parseFloat(ri.retryDelay)) || parseFloat(retryHeader) || 0;
+        // a limit per day is named in the answer: quotaId "GenerateRequestsPerDayPerProjectPerModel-FreeTier", with its value
+        const qf = det.find((d) => /QuotaFailure$/.test(d['@type'] || ''));
+        const day = ((qf && qf.violations) || []).find((v) => v && /PerDay/i.test(v.quotaId || ''));
+        const limit = day && /^\d+$/.test(String(day.quotaValue)) ? +day.quotaValue : undefined;
+        const badKey = status === 401 || status === 403 || reason === 'API_KEY_INVALID';
         const why = badKey
           ? 'The API key was not accepted.'
-          : r.status === 404
-            ? `The model name${gem ? ' (' + model + ')' : ''} may be wrong, or the model has been retired – check the model name in ⚙.`
-            : r.status === 429
+          : status === 404
+            ? `The model name (${model}) may be wrong, or the model has been retired – check it in the AI settings (⚙).`
+            : status === 429
               ? gem
-                ? 'Too many requests: the free tier allows only a few requests per minute and per day – wait a minute and try again.'
-                : 'Too many requests or no credit left – try again in a minute.'
-              : BUSY.includes(r.status)
+                ? day
+                  ? `${model} is over its limit for today${limit != null ? ` (${limit} requests a day)` : ''}. The free tier allows each model a number of requests per day, counted per project: go on when the service takes requests again, use a key from another person or project, or choose another model in the AI settings (⚙).`
+                  : 'Too many requests: the free tier allows only a few requests per minute and per day – wait a minute and try again.'
+                : 'Too many requests, or no credit left – try again in a minute.'
+              : BUSY.includes(status)
                 ? gem
-                  ? `Google’s servers are busy for ${model} (“high demand”). This is on Google’s side, not a problem with your key: wait a minute and try again, or choose another model in ⚙.`
+                  ? `Google’s servers are busy for ${model} (“high demand”). That is on Google’s side, not a problem with your key: wait a minute and try again, or choose another model in the AI settings (⚙).`
                   : 'The service is busy or had a temporary problem – try again in a minute.'
                 : '';
-        throw Object.assign(new Error(`HTTP ${r.status}. ${why} ${detail}`.trim()), { status: r.status, retryAfter });
-      }
-      const reader = r.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        let k;
-        while ((k = buf.indexOf('\n')) >= 0) {
-          const line = buf.slice(0, k).trim();
-          buf = buf.slice(k + 1);
-          if (!line.startsWith('data:')) continue;
-          const data = line.slice(5).trim();
-          if (!data || data === '[DONE]') continue;
-          let j;
+        return Object.assign(new Error(`HTTP ${status}. ${why} ${detail}`.trim()), { status, retryAfter, daily: !!day, limit });
+      };
+      try {
+        arm();
+        let r;
+        if (s.provider === 'anthropic') {
+          r = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+            body: JSON.stringify({ model, max_tokens: 4000, system, messages, stream: true }),
+            signal: ac.signal
+          }).catch((e) => {
+            throw lost(e);
+          });
+        } else if (gem) {
+          // Google's Gemini API (generateContent, streamed as server-sent events); the whole conversation is sent each time
+          r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': key },
+            body: JSON.stringify({ system_instruction: { parts: [{ text: system }] }, contents: messages.map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] })) }),
+            signal: ac.signal
+          }).catch((e) => {
+            throw lost(e);
+          });
+        } else {
+          r = await fetch(base + '/chat/completions', {
+            method: 'POST',
+            headers: Object.assign({ 'content-type': 'application/json' }, key ? { authorization: 'Bearer ' + key } : {}),
+            body: JSON.stringify({ model, stream: true, messages: [{ role: 'system', content: system }].concat(messages) }),
+            signal: ac.signal
+          }).catch((e) => {
+            throw lost(e);
+          });
+        }
+        arm();
+        if (!r.ok) {
+          let j = null;
           try {
-            j = JSON.parse(data);
+            j = await r.json();
           } catch (e) {
-            continue;
+            if (signal && signal.aborted) throw stopped();
           }
-          if (s.provider === 'anthropic') {
-            if (j.type === 'content_block_delta' && j.delta && j.delta.type === 'text_delta') onDelta(j.delta.text);
-            else if (j.type === 'error') throw Object.assign(new Error((j.error && j.error.message) || 'stream error'), { status: j.error && j.error.type === 'overloaded_error' ? 529 : undefined });
-          } else if (s.provider === 'gemini') {
-            if (j.error) throw Object.assign(new Error(j.error.message || 'stream error'), { status: j.error.code });
-            if (j.promptFeedback && j.promptFeedback.blockReason) throw new Error('Gemini did not answer (' + j.promptFeedback.blockReason + ').');
-            const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
-            parts.forEach((p) => {
-              if (p.text && !p.thought) onDelta(p.text);
-            });
-          } else {
-            const dd = j.choices && j.choices[0] && j.choices[0].delta;
-            if (dd && dd.content) onDelta(dd.content);
+          throw refused(r.status, j, r.statusText, r.headers.get('retry-after'));
+        }
+        const reader = r.body.getReader();
+        const dec = new TextDecoder();
+        let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read().catch((e) => {
+            throw lost(e);
+          });
+          if (done) break;
+          arm();
+          bytes += value.length;
+          buf += dec.decode(value, { stream: true });
+          let k;
+          while ((k = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, k).trim();
+            buf = buf.slice(k + 1);
+            if (!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if (!data || data === '[DONE]') continue;
+            let j;
+            try {
+              j = JSON.parse(data);
+            } catch (e) {
+              continue;
+            }
+            if (s.provider === 'anthropic') {
+              if (j.type === 'content_block_delta' && j.delta && j.delta.type === 'text_delta') onDelta(j.delta.text);
+              else if (j.type === 'error') throw Object.assign(new Error((j.error && j.error.message) || 'stream error'), { status: j.error && j.error.type === 'overloaded_error' ? 529 : undefined });
+            } else if (gem) {
+              if (j.error) {
+                // an error in an answer that began with "200 OK": the same kinds as the errors that come instead of an answer
+                const code = +j.error.code || { UNAVAILABLE: 503, RESOURCE_EXHAUSTED: 429, INTERNAL: 500, DEADLINE_EXCEEDED: 504, NOT_FOUND: 404 }[j.error.status];
+                throw code ? refused(code, j) : new Error(j.error.message || 'stream error');
+              }
+              if (j.promptFeedback && j.promptFeedback.blockReason) throw new Error('Gemini did not answer (' + j.promptFeedback.blockReason + ').');
+              const cand = (j.candidates && j.candidates[0]) || {};
+              ((cand.content && cand.content.parts) || []).forEach((p) => {
+                if (p.text && !p.thought) onDelta(p.text);
+              });
+              // A reply that the service cut off as a "malformed function call": the model had begun its ```bash block,
+              // and the service took the fence for the call of a tool named bash. What it took away is in finishMessage
+              // ("Malformed function call: call:bash ```", the commands, "```") – the block goes back into the reply.
+              // (Seen with gemini-3.5-flash on 6 October 2026, twice in about seventy replies.)
+              if (cand.finishReason === 'MALFORMED_FUNCTION_CALL' && typeof cand.finishMessage === 'string') {
+                const m = /call:\s*(?:bash|sh|shell)\s*```[^\n]*\n([\s\S]*?)\n?```\s*$/.exec(cand.finishMessage);
+                if (m && m[1].trim()) onDelta('\n\n```bash\n' + m[1] + '\n```\n');
+              }
+            } else {
+              const dd = j.choices && j.choices[0] && j.choices[0].delta;
+              if (dd && dd.content) onDelta(dd.content);
+            }
           }
         }
+      } finally {
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onStop);
+        ac.abort(); // (nothing is left to end when the answer came whole)
       }
     }
 
@@ -1376,7 +1754,7 @@
   <div class="ai-live-box">
     <label>Service <select data-k="provider"><option value="gemini" ${s.provider === 'gemini' ? 'selected' : ''}>Google Gemini (free tier available)</option><option value="anthropic" ${s.provider === 'anthropic' ? 'selected' : ''}>Anthropic (Claude)</option><option value="openai" ${s.provider === 'openai' ? 'selected' : ''}>OpenAI-compatible service</option></select></label>
     <label data-show="gemini">Model <input data-k="geminiModel" value="${esc(geminiModelOf(s))}" spellcheck="false"></label>
-    <p data-show="gemini" class="muted small">Make a free key with a Google account at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> (you must be 18 or over). On the free tier Google may use what you send to improve its products, and human reviewers may read it. The free tier allows only a few requests per minute and per day.</p>
+    <p data-show="gemini" class="muted small">Make a free key with a Google account at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> (you must be 18 or over). On the free tier Google may use what you send to improve its products, and human reviewers may read it. The free tier allows each model only a few requests per minute and a limited number per day; when a model is busy or over its limit, the page asks another one, and each answer says which model replied.</p>
     <label data-show="anthropic">Model <input data-k="model" value="${esc(anthropicModelOf(s))}" spellcheck="false"></label>
     <label data-show="openai">Base URL <input data-k="baseURL" value="${esc(s.baseURL)}" spellcheck="false"></label>
     <label data-show="openai">Model <input data-k="openaiModel" value="${esc(s.openaiModel)}" placeholder="the model name your service uses" spellcheck="false"></label>
@@ -1412,8 +1790,8 @@
         out.textContent = 'Testing…';
         let got = '';
         try {
-          const res = await this.streamLive([{ role: 'user', content: 'Reply with the single word: ready' }], (d) => (got += d), undefined, read(), (note) => (out.textContent = note));
-          out.textContent = '✓ Connected: “' + got.trim().slice(0, 40) + '”' + (res.skipped.length ? ` – from ${res.model} (${res.skipped.map((x) => x.model + ' ' + skipWord(x.status)).join(', ')})` : '');
+          const res = await this.streamLive([{ role: 'user', content: 'Reply with the single word: ready' }], (d) => (got += d), undefined, Object.assign(read(), { onReset: () => (got = '') }), (note) => (out.textContent = note));
+          out.textContent = '✓ Connected: “' + got.trim().slice(0, 40) + '”' + (res.skipped.length ? ` – from ${res.model} (${res.skipped.map((x) => x.model + ' ' + skipWord(x)).join(', ')})` : '');
         } catch (e) {
           out.textContent = '✗ ' + e.message;
         }
@@ -1450,6 +1828,7 @@
   }
 
   MG.Assistant = Assistant;
+  MG.aiModelMemory = REST;
   MG.renderMarkdown = renderMarkdown;
   MG.aiUtil = { findRule, ruleNames, renderMarkdown, score };
 })();

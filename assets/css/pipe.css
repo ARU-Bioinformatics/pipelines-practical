@@ -124,6 +124,10 @@
 .ag-step.run { background: #fff8e0; }
 .ag-step.bad { background: var(--bad-soft); }
 .ag-step code { font-size: 0.82rem; }
+/* the terminal while the real agent uses it; a step of several lines */
+.term.locked .term-inputline { opacity: 0.6; }
+.term.locked .term-input::placeholder { color: #c9b6f2; font-family: var(--font); font-size: 12.5px; }
+.ag-step code.ag-cmd { display: inline-block; white-space: pre-wrap; word-break: break-word; vertical-align: top; }
 .ag-ic { width: 16px; flex: none; text-align: center; color: var(--good); font-weight: 700; }
 .ag-step.bad .ag-ic { color: var(--bad); }
 .ag-out { flex-basis: 100%; margin: 2px 0 2px 23px; }

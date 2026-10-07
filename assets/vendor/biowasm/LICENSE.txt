@@ -1,9 +1,16 @@
-biowasm and Aioli
+Biowasm and Aioli
 =================
-The WebAssembly builds of samtools, bcftools and htslib (bgzip, tabix) in this
-folder, and the Aioli runner (aioli.js), come from the biowasm project
+The Aioli runner (aioli.js), the base module (base/) and the WebAssembly builds
+in this folder – all except GNU diffutils (diff, cmp) and the GNU grep 3.11 that
+carries out "grep -P", which were compiled for the practical "AI agents for
+bioinformatics", whose terminal this practical shares – come from the Biowasm project
 (https://biowasm.com, https://github.com/biowasm/biowasm and
-https://github.com/biowasm/aioli).
+https://github.com/biowasm/aioli). The licence below is that of Biowasm and
+Aioli themselves. It does not relicense the programs: each program keeps its
+own licence, which is in its folder (NAME/VERSION/) together with a NOTICE.txt.
+(The folder of the base module, base/1.0.0/, has a notice and checksums only:
+its licence is the one below.)
+Local changes are listed in RUNTIME-PATCHES.txt.
 
 MIT License
 
@@ -27,16 +34,37 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-samtools, bcftools and htslib
-=============================
-Copyright (C) Genome Research Ltd. and contributors
-(https://www.htslib.org). samtools and bcftools are distributed under the
-MIT/Expat licence (bcftools: MIT/Expat or, if built with the GNU Scientific
-Library, GPL); htslib under the MIT/Expat and modified 3-clause BSD licences.
-The full licence texts of the versions used here are next to the programs:
-  samtools/1.17/LICENSE            samtools 1.17
-  bcftools/1.10/LICENSE            bcftools 1.10
-  bcftools/1.10/HTSLIB-1.10-LICENSE  htslib 1.10, built into bcftools 1.10
-  htslib/1.17/LICENSE              htslib 1.17 (bgzip, tabix)
-(taken from the release tags 1.17 and 1.10 of github.com/samtools/samtools,
-/bcftools and /htslib).
+Comlink
+=======
+aioli.js includes Comlink (https://github.com/GoogleChromeLabs/comlink), the
+library that carries the calls between the page and the worker in which the
+programs run. Its source files state:
+
+    Copyright 2019 Google LLC
+    SPDX-License-Identifier: Apache-2.0
+
+The text of the Apache License, Version 2.0 is in ../licenses/Apache-2.0.txt.
+Comlink is used unmodified, as bundled into aioli.js by the Aioli project
+(the bundler removed the comment above from the file).
+
+The programs
+============
+Program (folder)              Licence
+bcftools/1.10                 MIT/Expat; with HTSlib 1.10 (MIT/Expat, modified 3-clause BSD)
+coreutils/8.32                GNU GPL version 3 or later
+diffutils/3.10 (diff, cmp)    GNU GPL version 3 or later – not a Biowasm build
+gawk/5.1.0                    GNU GPL version 3 or later
+grep/3.7                      GNU GPL version 3 or later
+grep/3.11 (for "grep -P")     GNU GPL version 3 or later; with PCRE2 10.42 (3-clause BSD with the
+                              PCRE2 exemption) – not a Biowasm build
+htslib/1.17 (bgzip, tabix)    MIT/Expat, modified 3-clause BSD
+minimap2/2.22                 MIT
+samtools/1.17                 MIT/Expat
+sed/4.8                       GNU GPL version 3 or later
+
+The source code and build recipes of the GPL programs are in ../licenses/
+(see ../licenses/README.txt). Each .wasm file also contains parts of the
+Emscripten runtime and its C/C++ libraries (musl, libc++, compiler-rt; MIT,
+Apache 2.0 with LLVM exception), and the programs that read compressed files
+contain zlib; htslib-based programs also bzip2 and liblzma. The licence texts
+of these libraries are in ../licenses/runtime-libraries/.

@@ -159,7 +159,7 @@
       const K = this.kernel();
       if (!K) throw MG.shellUtil.userErr(`${type === 'smk' ? 'snakemake' : 'python'}: Python is not available on this page`);
       if (K.state !== 'ready') {
-        ctx.io.note('Starting Python in your browser (the first time this downloads about 40 MB and takes 10–30 seconds)…');
+        ctx.io.note('Starting Python in your browser (the first time this downloads about 30 MB and takes 10–30 seconds)…');
         if (ctx.term && ctx.term.statusEl) ctx.term.statusEl.innerHTML = '<span class="spinner small"></span> starting Python…';
       }
       try {
@@ -191,7 +191,10 @@
                 pysync.apply(m.changes);
                 const io = Object.assign({}, ctx.io, { out: ctx.out, err: ctx.err });
                 MG.bus.emit('smk:job-shell', { cmd: m.cmd });
-                code = await ctx.shell.exec(m.cmd, io, { errexit: true, pipefail: true, tools: m.tools || null });
+                // (Snakemake runs the command of a rule with  /usr/bin/bash -c "set -euo pipefail; …" : the first error ends
+                // it, a name without a value is an error, and a pipeline fails if any of its programs does. The messages
+                // of that shell begin with "/usr/bin/bash: line 1: ". tools: the programs of the rule's conda environment.)
+                code = await ctx.shell.exec(m.cmd, io, { errexit: true, nounset: true, pipefail: true, command: true, name: '/usr/bin/bash', tools: m.tools || null });
               } catch (e) {
                 ctx.err(String((e && e.message) || e) + '\n');
                 code = 1;

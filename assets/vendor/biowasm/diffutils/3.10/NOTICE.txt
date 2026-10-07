@@ -1,0 +1,34 @@
+GNU diffutils 3.10: diff, cmp
+Licence: GPL-3.0-or-later (COPYING in this folder)
+Upstream source: https://ftp.gnu.org/gnu/diffutils/diffutils-3.10.tar.xz
+
+These two programs were compiled to WebAssembly for the practical "AI agents for bioinformatics",
+whose terminal this practical shares – they are not Biowasm builds.
+Compiler: Emscripten 6.0.10; configured with --disable-nls; no threads.
+Everything needed to build them again is in ../../../licenses/:
+  sources/diffutils-3.10.tar.xz                     the source of the release, as published by GNU
+  diffutils-build/diffutils-3.10-webassembly.patch  the one change made to it (src/cmp.c – see below)
+  diffutils-build/build-diffutils.sh                the build script (it also records exit(status) and
+                                                    sets the program's name in the loaders)
+  diffutils-build/README.txt                        how to run it
+
+Change to the source (the patch). cmp chooses between two wordings of its message by the locale –
+"a b differ: char 7, line 2" in the POSIX locale, "a b differ: byte 7, line 2" in any other – but
+only in a build with native language support. This build has none, and its locale is not the POSIX
+locale (the language is taken from the browser: en_GB.UTF-8, say). The test was made independent of
+native language support, so that cmp says "byte", as it does on a Linux system with a UTF-8 locale.
+diff is built from the unchanged source.
+
+Changes to the JavaScript loaders, diff.js and cmp.js (made by the build script): exit(status) is
+recorded as Module.__exitStatus, so that the terminal of the practical keeps the exit status; and the
+program is given its name (diff, cmp), with which its messages begin.
+
+In the terminal of the practical: the files keep the times of their last change as the page shows
+them (ls -l, stat), so the headers of diff -u and diff -c show those times; the time zone is that of
+the computer, or TZ. sdiff and diff3 are not here: they work by starting diff as a second program,
+which a WebAssembly program in a web page cannot do. diff -l (--paginate) starts pr, and cannot work
+either.
+
+Checked against GNU diffutils 3.10 on Linux (the tests of that practical, test/t_lang.py among them):
+the same output, byte for byte – normal, unified, context, ed, RCS and side-by-side formats, folders,
+files of 30,000 lines, last lines without a newline, the options that ignore blanks and case.

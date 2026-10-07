@@ -157,6 +157,9 @@
       this.fs.mkdirp(GX_ROOT + '/database/files/000');
       this.fs.mkdirp(GX_ROOT + '/jobs');
       this.shell = new MG.Shell({ fs: this.gfs, term: null });
+      // Galaxy installs the programs of its tools itself (the "requirements" of each tool): they are there whatever
+      // conda environment is active in the terminal. (See dispatch in shell-pipe.js.)
+      this.shell._jobTools = ['minimap2', 'samtools', 'bcftools', 'bgzip', 'tabix'];
       this.datasets = [];
       this.jobs = [];
       this.invocations = [];
@@ -360,7 +363,8 @@
         const e = this.fs.get(p);
         if (e && e.kind !== 'dir' && !/\.(fai|bai|md|json)$|MD5SUMS$/.test(p)) files.push(p);
       };
-      this.fs.list('/data/course').forEach((c) => add(c.path));
+      // (in the order of a dictionary, as before: the terminal's own order – ls – has capital letters first)
+      this.fs.list('/data/course').sort((a, b) => a.name.localeCompare(b.name)).forEach((c) => add(c.path));
       for (const [p, e] of this.fs.entries) {
         if (!p.startsWith(MG.app.HOME + '/') || e.kind === 'dir' || /\/\.|\/results\/|\/logs\//.test(p.slice(MG.app.HOME.length))) continue;
         if (/\.(fastq|fq|fa|fasta)$/i.test(p)) add(p);

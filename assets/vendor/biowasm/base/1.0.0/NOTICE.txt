@@ -1,0 +1,5 @@
+Biowasm base module 1.0.0
+Licence: MIT (see ../../LICENSE.txt)
+Source: https://github.com/biowasm/biowasm (tools/base)
+Downloaded from https://biowasm.com/cdn/v3/base/1.0.0/ on 2026-09-30. Unmodified.
+It holds the file system that all the programs share.

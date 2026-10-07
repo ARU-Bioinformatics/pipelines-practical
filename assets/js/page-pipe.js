@@ -234,7 +234,7 @@
       'How this page works',
       `<ul>
 <li><b>Instructions</b> are on the left, the <b>workbench</b> on the right: Terminal, Files, Notebook, Galaxy and the AI assistant. Drag the divider to resize.</li>
-<li><b>Terminal</b>: a Linux-like shell. minimap2, samtools, bcftools and htslib are the real programs, compiled to WebAssembly and running in your browser. Snakemake and Python run in Python compiled to WebAssembly (Pyodide) – the first time, it takes 10–30 seconds to start.</li>
+<li><b>Terminal</b>: a Linux-like shell. minimap2, samtools, bcftools and htslib are the real programs, compiled to WebAssembly and running in your browser. Snakemake and Python run in Python compiled to WebAssembly (Pyodide) – the first time, it takes 10–30 seconds to start. <kbd>Ctrl</kbd>+<kbd>C</kbd> stops a command; pressed a second time it stops the running program by force, and the files that programs had written (BAM, VCF.gz) are then lost – your pipeline makes them again.</li>
 <li><b>Files</b>: your folders and an editor. Save with <kbd>Ctrl</kbd>+<kbd>S</kbd> – commands in the terminal use the saved files.</li>
 <li><b>▶ buttons</b> in the instructions type commands for you (press <kbd>Enter</kbd> to run them); <b>Create this file</b> buttons write a file into your project.</li>
 <li><b>AI assistant</b>: in <i>guided</i> mode its answers are prepared – some contain deliberate mistakes. With an API key – your own (Google Gemini has a free tier) or one from your lecturer – ⚙ switches to a live model: what you type in the Chat tab goes to it, and a task you type in the Agent tab goes to a real agent that runs commands in your terminal, in its own folder. The suggested agent tasks stay simulated (chapter 8).</li>

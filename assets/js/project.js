@@ -75,6 +75,12 @@
       window.addEventListener('beforeunload', () => this.save());
       setInterval(() => this.save(), 30000);
     },
+    /** After a program was stopped by force (Ctrl+C twice): what programs had written was in the stopped programs'
+        memory, and this practical keeps no copies of it – a pipeline makes its results again. Nothing comes back;
+        the terminal names what is gone. */
+    async afterKill() {
+      return 0;
+    },
     reset() {
       store.remove('files');
       store.remove('condaEnvs');

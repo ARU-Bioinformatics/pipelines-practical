@@ -1,0 +1,14 @@
+BCFtools 1.10
+Licence: MIT/Expat (GPL only if built with the GNU Scientific Library, which this build is not);
+  LICENSE in this folder. Built with HTSlib 1.10: HTSLIB-1.10-LICENSE (MIT/Expat and modified 3-clause BSD).
+Upstream source: https://github.com/samtools/bcftools/tree/1.10
+WebAssembly build: Biowasm (https://biowasm.com/), downloaded from
+  https://biowasm.com/cdn/v3/bcftools/1.10/ on 2026-09-30
+Build recipes: https://github.com/biowasm/biowasm (a pinned copy is in ../../../licenses/biowasm-build/)
+
+Local change to the JavaScript loader: exit(status) is recorded as Module.__exitStatus, so that the
+terminal of the practical keeps the exit status of a failed command.
+Modified file: bcftools.js
+bcftools.wasm and bcftools.data are unmodified.
+
+This build cannot load plugins (bcftools +NAME): a WebAssembly program in a web page has no shared libraries.

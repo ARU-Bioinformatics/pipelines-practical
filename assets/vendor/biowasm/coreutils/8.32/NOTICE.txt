@@ -1,12 +1,52 @@
-GNU coreutils 8.32
-License: GPL-3.0-or-later
+GNU coreutils 8.32: cat comm cut date fold head join md5sum paste seq shuf sort tail tee tr uniq wc
+Licence: GPL-3.0-or-later (COPYING and LICENSE in this folder)
 Upstream source: https://ftp.gnu.org/gnu/coreutils/coreutils-8.32.tar.xz
-WebAssembly build provider: Biowasm (https://biowasm.com/)
-Build source and scripts: https://github.com/biowasm/biowasm
-Artifact origin: https://biowasm.com/cdn/v3/coreutils/8.32/
-Retrieved: 2026-09-30
+  (a copy is in ../../../licenses/sources/, with the build recipe in ../../../licenses/biowasm-build/)
+WebAssembly build: Biowasm (https://biowasm.com/), downloaded from
+  https://biowasm.com/cdn/v3/coreutils/8.32/ on 2026-09-30 (fold, shuf: 2026-10-01; md5sum, date: 2026-10-02)
+Build recipes: https://github.com/biowasm/biowasm (a pinned copy is in ../../../licenses/biowasm-build/)
 
-Local JavaScript glue modification: record each Emscripten exit status in
-Module.__exitStatus so the practical runtime can preserve command failures.
-Modified files: cat.js, comm.js, cut.js, head.js, join.js, paste.js, seq.js, sort.js, tail.js, tee.js, tr.js, uniq.js, wc.js
-The WebAssembly binaries and associated data assets are unmodified.
+Local changes
+
+1. JavaScript loaders (all 17 NAME.js files): exit(status) is recorded as Module.__exitStatus, so
+   that the terminal of the practical keeps the exit status of a failed command.
+
+2. WebAssembly programs (all 17 NAME.wasm files): ONE BYTE of each file is changed, which makes the
+   C library's stdout unbuffered. As built, these programs lose output that does not end with a
+   newline (seq 3 | tr '\n' ' ' printed nothing; head -c 100 FILE dropped the last, unfinished
+   line): they flush stdout in a function registered with atexit(), and the builds are linked
+   without EXIT_RUNTIME, so that function never runs. The change sets buf_size of the C library's
+   stdout object in the program's initial memory from 1024 to 0, exactly as it is for stderr.
+   Nothing else is changed and each file keeps its size. The script that makes the change, and
+   that can check a file, is ../../../licenses/local-patches/unbuffer-stdout.py
+   (applied as: unbuffer-stdout.py *.wasm).
+   After the change the output of these programs was compared with native GNU coreutils on
+   the command lines of a test of the practical "AI agents for bioinformatics", whose terminal
+   this practical shares (test/t_partial.py there): the same, character for character.
+
+  cat.wasm     byte  62025: 04 -> 00   as downloaded: sha256 47065e3678f0559c92fae12cfa6497ab89ab380a3f19ca716346c570e3d3885a
+  comm.wasm    byte  63723: 04 -> 00   as downloaded: sha256 3b9b71a5a853aacae23baead1acaaf41966381a300d6a03c8e908328ca7172a4
+  cut.wasm     byte  69266: 04 -> 00   as downloaded: sha256 1b5f4bccb484e8a317ab1b97ac61026769119868e924227bb28dc97ce7a41a4d
+  date.wasm    byte 106494: 04 -> 00   as downloaded: sha256 b26be797b616e4fa5d2d90c9127408c34b088159892e8c6e8c335a96cd258164
+  fold.wasm    byte  62675: 04 -> 00   as downloaded: sha256 2ba1f094db7bd50abcdf6715a7a15d55a4aafdc3be484fae5c4e80b568d1f61d
+  head.wasm    byte  67987: 04 -> 00   as downloaded: sha256 6c6c9446f62b0bfec7c953fdaf0f33d23fb1c0c99c73d31815152f27de761db1
+  join.wasm    byte  74765: 04 -> 00   as downloaded: sha256 b79f6221667607899c1e424c11679364da6d6c3eae058eb8f399130cf4713ede
+  md5sum.wasm  byte  69196: 04 -> 00   as downloaded: sha256 1949fdc61cd6aa5ac7d1101773a3498e8642e8a11d208c13f37ea8bcc18a0cf4
+  paste.wasm   byte  60739: 04 -> 00   as downloaded: sha256 22d6f6eda9ab87fe3c50e3adddf234435eedecfc6971735c1a05bb86515272f2
+  seq.wasm     byte  76214: 04 -> 00   as downloaded: sha256 fb5a383f63a18a61062e67d9514d9cd60b56965c662030deff9435dcf7505f82
+  shuf.wasm    byte  75264: 04 -> 00   as downloaded: sha256 509e7f03b8741c902136882b8d4b67dffcc72f1907cacf4c509b984bc454055e
+  sort.wasm    byte 129093: 04 -> 00   as downloaded: sha256 5b341531c97ec95759c8237735d66f56b1a842bd1fc1868aff48f0507676f621
+  tail.wasm    byte  89391: 04 -> 00   as downloaded: sha256 0e54c1c78ae4c2a6bac4301779911b7814e4e41b8509ddb91e4e278f4545ed5a
+  tee.wasm     byte  61683: 04 -> 00   as downloaded: sha256 3f7077cfc933c37d8259105985fcc2ad50e563d80d18c82e5a36f47b71d5a9d6
+  tr.wasm      byte  70905: 04 -> 00   as downloaded: sha256 545193c0f7e251a1265e8656bd7c59bdbf6923583b5ba570b34db3b53bb855e2
+  uniq.wasm    byte  68174: 04 -> 00   as downloaded: sha256 adcd1112d3c930b0815cc05ce9f0d3048429ea2971a15face38cccdc38063095
+  wc.wasm      byte  70552: 04 -> 00   as downloaded: sha256 3eae47eca5f95f452adf830232b2d314e1f0564e9a4cc60734a0eda4fdb85ffa
+
+3. One loader, date.js: the day of the year (tm_yday in the C library's localtime and mktime) is the
+   number of days between the two calendar dates. As downloaded, the loader worked it out from the
+   milliseconds since 1 January, local time – one hour short in summer time, so that for a local time
+   between 00:00 and 00:59 on a summer day it was the day before, and "date -d 2024-07-15" printed
+   "invalid date" in the UK and in Europe. The script is ../../../licenses/local-patches/fix-day-of-year.py
+   (applied as: fix-day-of-year.py date.js; one place).
+
+SHA256SUMS lists the files as they are here (after these changes).

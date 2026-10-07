@@ -32,9 +32,19 @@ window.MG_CONFIG = {
      put a current one here (see ai.google.dev/gemini-api/docs/models). */
   liveProvider: 'gemini',
   geminiModel: 'gemini-3.8-flash',
-  /* If that model is busy ("high demand", HTTP 503), over its free-tier limit (429) or not
-     found (404), live mode asks these models in turn; the answer says which one replied.
-     [] turns this off. */
-  geminiFallbackModels: ['gemini-3.6-flash', 'gemini-3.5-flash-lite'],
-  anthropicModel: 'claude-sonnet-5-5'
+  /* If that model is busy ("high demand", HTTP 503), over a limit (429), not found (404) or
+     gives no answer, live mode asks these models in turn; the answer says which one replied.
+     The page remembers a model that could not answer and does not ask it again at once.
+     On the free tier every model has limits of its own, per minute and per day, so a longer
+     list gives a free key more requests in a day: put the models first that you would rather
+     have. [] turns this off. (All of these answered a free key on 6 October 2026.) */
+  geminiFallbackModels: ['gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'],
+  /* How many seconds a Gemini model may say nothing – before its answer begins, or in the
+     middle of it – until the page gives that request up and asks the next model. */
+  aiWaitSeconds: 60,
+  anthropicModel: 'claude-sonnet-5-5',
+
+  /* The real agent of chapter 8 (live mode): after how many seconds a step that has not
+     ended is stopped. (150; at least 5.) */
+  agentCommandSeconds: 150
 };

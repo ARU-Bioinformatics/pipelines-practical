@@ -7,8 +7,27 @@
   const MG = window.MG;
   const { h, esc, bus, store } = MG;
 
-  const MAX_LINES_PER_COMMAND = 3000;
+  // Of what one command prints, the terminal shows at most 3,000 lines: the first 2,000 and the last 1,000 (the end of
+  // a long output is where a script prints its result – and the end is what an AI agent is sent of it).
+  const HEAD_LINES = 2000, TAIL_LINES = 1000;
 
+  /** The file system as the shell of one command sees it: the same files, and every path that is worked out through
+      it (resolve – which all the reading and writing goes through) is added to `log`. `__real` is the file system
+      itself, for code that looks at all files and not at the ones a command names (tools-wasm.js). */
+  function watched(fs, log) {
+    const resolve = function (p, cwd) {
+      const abs = fs.resolve(p, cwd);
+      log.add(abs);
+      return abs;
+    };
+    return new Proxy(fs, {
+      get: (t, k) => (k === 'resolve' ? resolve : k === '__real' ? t : t[k]),
+      set: (t, k, v) => {
+        t[k] = v;
+        return true;
+      }
+    });
+  }
   class TerminalUI {
     constructor(root, opts = {}) {
       this.root = root;
@@ -24,7 +43,6 @@
       const saved = store.get('termHistory', []);
       if (Array.isArray(saved)) this.shell.history = saved.slice(-200);
       this.fs.onChange(() => this._filesSoon());
-      bus.on('conda:changed', () => this._renderPrompt());
       if (opts.welcome) this.note(opts.welcome);
       this._renderPrompt();
       this.renderFiles();
@@ -60,8 +78,7 @@
         const t = (e.clipboardData || window.clipboardData).getData('text');
         if (t && t.includes('\n')) {
           e.preventDefault();
-          const lines = t.split(/\r?\n/).filter((x) => x.trim());
-          this._queue(lines);
+          this._queue(t.replace(/\r/g, '').replace(/\n+$/, '').split('\n'));
         }
       });
       if (store.get('termFiles', false)) this.toggleFiles(true);
@@ -71,8 +88,10 @@
       return this.fs.pretty(this.fs.cwd);
     }
     _renderPrompt() {
-      const env = MG.conda ? `<span class="penv">(${esc(MG.conda.active)})</span> ` : '';
-      const p = `${env}<span class="pu">student@${esc(this.hostname)}</span>:<span class="pp">${esc(this.cwdPretty)}</span>$&nbsp;`;
+      // "> " while a command is not complete yet (an open quote, a for … without its done)
+      // (in front of the prompt: what the page puts there – the active conda environment)
+      const pre = MG.shellHooks && MG.shellHooks.promptPrefix ? MG.shellHooks.promptPrefix() : '';
+      const p = this._more != null ? '<span class="pc">&gt;</span>&nbsp;' : `${pre}<span class="pu">student@${esc(this.hostname)}</span>:<span class="pp">${esc(this.cwdPretty)}</span>$&nbsp;`;
       this.promptEl.innerHTML = p;
       this.titleEl.textContent = `student@${this.hostname}: ${this.cwdPretty}`;
     }
@@ -81,19 +100,44 @@
     }
 
     /* ---------------- output ---------------- */
+    /** what comes after the first HEAD_LINES lines of a command is held back: the last TAIL_LINES lines of it are
+        shown when the command has ended (see exec), the lines between are counted (_truncated) */
+    _hold(cls, text) {
+      const T = this._tail || (this._tail = []);
+      const last = T[T.length - 1];
+      if (last && last.cls === cls) last.text += text;
+      else T.push({ cls, text });
+      this._tailLines = (this._tailLines || 0) + (text.match(/\n/g) || []).length;
+      // (cut at the front, in large pieces: not for every line that arrives)
+      if (this._tailLines > TAIL_LINES * 2) {
+        let drop = this._tailLines - TAIL_LINES;
+        this._truncated = (this._truncated || 0) + drop;
+        this._tailLines -= drop;
+        while (drop > 0 && T.length) {
+          const p = T[0], n = (p.text.match(/\n/g) || []).length;
+          if (n <= drop && T.length > 1) {
+            T.shift();
+            drop -= n;
+          } else {
+            let at = 0;
+            for (let k = 0; k < drop; k++) at = p.text.indexOf('\n', at) + 1;
+            p.text = p.text.slice(at);
+            drop = 0;
+          }
+        }
+      }
+    }
     _append(cls, text) {
       if (this._lineBudget != null) {
         const n = (text.match(/\n/g) || []).length;
-        if (this._lineBudget <= 0) {
-          this._truncated = (this._truncated || 0) + n;
-          return;
-        }
+        if (this._lineBudget <= 0) return this._hold(cls, text);
         if (n > this._lineBudget) {
-          const L = text.split('\n');
-          const keep = L.slice(0, this._lineBudget).join('\n') + '\n';
-          this._truncated = (this._truncated || 0) + (n - this._lineBudget);
+          let at = 0;
+          for (let k = 0; k < this._lineBudget; k++) at = text.indexOf('\n', at) + 1;
+          const rest = text.slice(at);
           this._lineBudget = 0;
-          text = keep;
+          text = text.slice(0, at);
+          this._hold(cls, rest);
         } else this._lineBudget -= n;
       }
       const last = this.outEl.lastElementChild;
@@ -143,6 +187,8 @@
       this._progEl = null;
     }
     clear() {
+      // not while a command of the AI agent runs: what it prints is read from here for the record and for the model
+      if (this.agentCmd) return;
       this.outEl.innerHTML = '';
     }
     _scroll() {
@@ -168,19 +214,19 @@
         const line = this.input.value;
         this.input.value = '';
         this.histIdx = null;
-        this.exec(line);
+        this._submit(line);
         return;
       }
       if (e.key === 'c' && e.ctrlKey) {
         if (window.getSelection && String(window.getSelection())) return; // allow copy
         e.preventDefault();
         if (this.busy) {
-          this.cancelled = true;
-          this.note('Stop requested. The current WebAssembly tool must finish; later pipeline stages and queued commands will be skipped.');
-          this._q=[];
+          this.stop();
         } else {
           this._echo(this.input.value + '^C');
           this.input.value = '';
+          this._more = null;
+          this._renderPrompt();
         }
         return;
       }
@@ -240,11 +286,72 @@
         }
       }
     }
+    /** while the AI agent uses the terminal, nothing can be typed into it */
+    lock(msg) {
+      this.locked = true;
+      this.input.disabled = true;
+      this.input.placeholder = msg || '';
+      this.root.classList.add('locked');
+    }
+    unlock() {
+      this.locked = false;
+      this.input.disabled = false;
+      this.input.placeholder = '';
+      this.root.classList.remove('locked');
+    }
+    /** Ctrl+C. The first time: the program that is running finishes, the rest is skipped.
+        A second time (or force): the program is stopped by force – see MG.wasm.kill */
+    stop(force) {
+      if (!this.busy) return [];
+      this._q = [];
+      if ((this.cancelled || force) && MG.wasm && MG.wasm.running) {
+        this.cancelled = true;
+        const program = MG.wasm.running;
+        const lost = MG.wasm.kill(this.fs);
+        this.note(`${program} was stopped by force, and the programs were started again.`);
+        // files that programs had written lived in the stopped programs' memory: the copies kept in the browser come back.
+        // (Not here for a command of the AI agent: there the files come back as they were before the command, when what
+        // the command changed is put back – see undoOutside in assistant.js – and the agent's card says what was lost.)
+        if (lost.length && MG.project && MG.project.afterKill && !(this.agentCmd || (MG.app && MG.app.agentBusy))) {
+          const times = MG.wasm.lostTimes || new Map();
+          MG.project.afterKill(this.fs, lost).then((n) => {
+            const list = (xs) => `${xs.slice(0, 5).map((x) => this.fs.pretty(x)).join(', ')}${xs.length > 5 ? ' and ' + (xs.length - 5) + ' more' : ''}`;
+            const gone = lost.filter((x) => !this.fs.exists(x));
+            if (gone.length) this.note(`Lost with the stopped program: ${list(gone)}. Run the commands, or your script, again to make ${gone.length === 1 ? 'it' : 'them'}.`);
+            // a file that was changed in the last seconds before the stop comes back as it was before that change
+            const older = lost.filter((x) => this.fs.exists(x) && (this.fs.get(x).mtime || 0) < (times.get(x) || 0));
+            if (older.length) this.note(`Back as an earlier version (the newest had not been stored yet): ${list(older)}. Make ${older.length === 1 ? 'it' : 'them'} again.`);
+          });
+        }
+        return lost;
+      }
+      // said once per command (the AI tab asks again and again until a command that ran for too long has ended)
+      if (!this.cancelled) this.note(`Stop requested: the program that is running finishes first, then the rest is skipped. If it does not finish, press ${this.locked ? 'Stop' : 'Ctrl+C'} again to stop it by force.`);
+      this.cancelled = true;
+      return [];
+    }
+    /** show a command as typed: one element, further lines of a block after "> " */
     _echo(line) {
-      const el = h('div.tl.cmdline', { html: this.promptEl.innerHTML + esc(line) });
+      const lines = String(line).split('\n');
+      const el = h('div.tl.cmdline', { html: this.promptEl.innerHTML + lines.map(esc).join('\n<span class="pc">&gt;</span>&nbsp;') });
       el.dataset.cls = 'cmd';
       this.outEl.appendChild(el);
       this._scroll();
+    }
+    /** a line was entered: run it – or, when the command is not complete yet, wait for the rest */
+    async _submit(line) {
+      const text = this._more != null ? this._more + '\n' + line : line;
+      if (text.trim() && MG.shellLang && MG.shellLang.incomplete(text)) {
+        this._echo(line);
+        this._more = text;
+        this._renderPrompt();
+        return null;
+      }
+      if (this._more == null) return this.exec(text);
+      this._echo(line);
+      this._more = null;
+      this._renderPrompt();
+      return this.exec(text, { echoed: true });
     }
     _queue(lines) {
       this._q = (this._q || []).concat(lines);
@@ -253,7 +360,7 @@
     async _drain() {
       while (this._q && this._q.length) {
         const l = this._q.shift();
-        await this.exec(l);
+        await this._submit(l);
       }
     }
 
@@ -261,18 +368,31 @@
     /** run a command line as if typed. opts.agent: run by the real AI agent – its commands do not
         tick the student's tasks and do not offer "Ask the AI assistant" */
     async exec(line, opts = {}) {
-      if(this.busy){this.note('The shared terminal is busy.');return 125;}
-      this._echo(line);
+      if (this.busy) {
+        this.note('The terminal is busy: wait for the current command to finish.');
+        return 125;
+      }
+      if (!opts.echoed) this._echo(line);
       const first = this.outEl.children.length;
       if (!line.trim()) return 0;
       this.busy = true;
+      this.agentCmd = !!opts.agent; // what this command does (programs, scripts, files) is the agent's doing, not the student's
       this.cancelled = false;
       this.root.classList.add('busy');
       this.statusEl.innerHTML = '<span class="spinner small"></span> running…';
-      this._lineBudget = MAX_LINES_PER_COMMAND;
+      this._lineBudget = HEAD_LINES;
       this._truncated = 0;
+      this._tail = null;
+      this._tailLines = 0;
       let code = 0;
       const t0 = performance.now();
+      // A command of the agent: every path that the shell works out while it runs is noted (this.touched) – for the
+      // script that can be made from the run, which leaves out a command that reaches outside the agent's folder.
+      const fs = this.shell.fs;
+      if (opts.agent) {
+        this.touched = new Set();
+        this.shell.fs = watched(fs, this.touched);
+      }
       try {
         code = await this.shell.run(line, this.io);
       } catch (e) {
@@ -280,10 +400,33 @@
         this.err(String(e && e.message ? e.message : e) + '\n');
         code = 1;
       } finally {
+        this.shell.fs = fs;
         this._lineBudget = null;
-        if (this._truncated) this.note(`… ${MG.shellUtil.fmtN(this._truncated)} more lines omitted from the display. Use head to view fewer lines, or write the output to a file with >.`);
+        // the end of a long output: the last lines of it, after a note that says how many lines are not shown
+        const tail = this._tail || [];
+        this._tail = null;
+        let over = this._tailLines - TAIL_LINES;
+        if (over > 0) {
+          this._truncated = (this._truncated || 0) + over;
+          while (over > 0 && tail.length) {
+            const p = tail[0], n = (p.text.match(/\n/g) || []).length;
+            if (n <= over && tail.length > 1) {
+              tail.shift();
+              over -= n;
+            } else {
+              let at = 0;
+              for (let k = 0; k < over; k++) at = p.text.indexOf('\n', at) + 1;
+              p.text = p.text.slice(at);
+              over = 0;
+            }
+          }
+        }
+        this._tailLines = 0;
+        if (this._truncated) this.note(`… ${MG.shellUtil.fmtN(this._truncated)} lines are not shown here – the first ${MG.shellUtil.fmtN(HEAD_LINES)} and the last ${MG.shellUtil.fmtN(TAIL_LINES)} lines of what this command printed are. Use head, tail or grep to look at part of it, or write the output to a file with >.`);
+        for (const p of tail) if (p.text) this._append(p.cls, p.text);
         this.endProgress();
         this.busy = false;
+        this.agentCmd = false;
         this.root.classList.remove('busy');
         this.statusEl.textContent = code ? `exit ${code}` : 'done';
         this._renderPrompt();
@@ -292,7 +435,7 @@
       }
       const argv = safeArgv(line);
       if (opts.agent) return code;
-      bus.emit('term:command', { line: line.trim(), code, name: argv[0] || '', sub: argv[1] || '', ms: performance.now() - t0 });
+      bus.emit('term:command', { line: line.trim(), code, name: argv[0] || '', sub: argv[1] || '', cwd: this.fs.pretty(this.fs.cwd), ms: performance.now() - t0 });
       if (code && code !== 130 && this.opts.askAI !== false && MG.Assistant) this._offerAsk(line, first);
       return code;
     }
@@ -316,6 +459,10 @@
 
     /** type a command into the prompt (and optionally run it) – used by ▶ buttons */
     async type(line, run) {
+      if (this.locked) {
+        MG.toast('The AI agent is using the terminal – wait until it has finished.', 'warn');
+        return;
+      }
       if (this.busy) {
         MG.toast('The terminal is still busy – wait for the current command to finish.', 'warn');
         return;
@@ -379,17 +526,19 @@
     }
     _fileClick(c) {
       if (c.entry.kind === 'dir') {
-        this.type('cd ' + this.fs.pretty(c.path).replace(/^~\//, '~/'));
+        this.type('cd ' + typed(this.fs.pretty(c.path)));
         return;
       }
-      const rel = relPath(this.fs.cwd, c.path);
+      const rel = typed(relPath(this.fs.cwd, c.path));
       const n = c.name;
       let cmd;
       if (/\.(fastq|fq)\.gz$/.test(n)) cmd = `zcat ${rel} | head -n 8`;
-      else if (/_fastqc\.html$/.test(n)) cmd = `open ${rel}`;
+      else if (/\.html?$/.test(n)) cmd = `open ${rel}`;
+      else if (/\.json$/.test(n)) cmd = `jq . ${rel} | head -n 40`;
+      else if (/\.sam$/.test(n)) cmd = `grep -v '^@' ${rel} | head -n 3`;
       else if (/\.bam$/.test(n)) cmd = `samtools view -H ${rel} | head`;
       else if (/\.vcf\.gz$/.test(n)) cmd = `bcftools view -H ${rel} | head`;
-      else if (/\.(bai|csi|tbi|gzi|zip|amb|ann|bwt|pac|sa)$/.test(n)) cmd = `ls -lh ${rel}`;
+      else if (/\.(bai|csi|tbi|gzi|zip|bt2)$/.test(n)) cmd = `ls -lh ${rel}`;
       else cmd = `head ${rel}`;
       this.type(cmd);
     }
@@ -402,19 +551,36 @@
     return 'text';
   }
   function relPath(from, to) {
-    if (to.startsWith(from + '/')) return to.slice(from.length + 1);
+    if (to.startsWith(from + '/')) {
+      // (a name that begins with ~ or - is written ./~… : the shell – and the program – must take it for a name)
+      const r = to.slice(from.length + 1);
+      return /^[~-]/.test(r) ? './' + r : r;
+    }
     const home = '/home/student';
     if (to.startsWith(home + '/')) return '~/' + to.slice(home.length + 1);
     return to;
   }
+  /** a path as it can be typed: in quotes where the shell would read it differently (a blank, $, *, a ~ that is part
+      of a name) – the ~/ of the home folder stays outside the quotes */
+  function typed(p) {
+    const head = p.startsWith('~/') ? '~/' : p === '~' ? '~' : '', rest = p.slice(head.length);
+    return rest === '' || /^[\w@%+=:,.\/-]+$/.test(rest) ? head + rest : head + "'" + rest.replace(/'/g, "'\\''") + "'";
+  }
+  /** the words of the last command of a line (its program and sub-command, for the tasks' checks) */
   function safeArgv(line) {
     try {
-      const l = MG.shellUtil.parse(line, {});
-      return l.length ? l[l.length - 1].pipeline[0].argv : [];
+      // of  a; b && c | d  it is c
+      const items = MG.shellLang.parse(line).items;
+      const last = items.length ? items[items.length - 1] : null;
+      const pipe = last ? (last.rest.length ? last.rest[last.rest.length - 1].pipe : last.first) : null;
+      const c = pipe ? pipe.cmds[0] : null;
+      if (c && c.type === 'simple') return c.words.map((w) => w.replace(/^(['"])(.*)\1$/, '$2'));
     } catch (e) {
-      return line.trim().split(/\s+/);
+      /* not a complete command */
     }
+    return line.trim().split(/\s+/);
   }
 
   MG.TerminalUI = TerminalUI;
+  MG.typedPath = typed;
 })();

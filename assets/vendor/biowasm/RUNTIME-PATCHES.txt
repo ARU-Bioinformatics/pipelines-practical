@@ -1,25 +1,246 @@
-Local changes to the biowasm runtime in this folder
-===================================================
-The WebAssembly programs (*.wasm) and their data files (*.data) are unmodified.
-Upstream: https://github.com/biowasm/biowasm and https://github.com/biowasm/aioli
+Local changes to the Biowasm runtime and programs in this folder
+================================================================
+Upstream: https://github.com/biowasm/biowasm (the programs and the base module) and
+https://github.com/biowasm/aioli (the runner, aioli.js).
 
-Inherited from the Variant Lab exploration site:
-- aioli.js: added the worker method execIO, which runs a program with real
-  file-descriptor stdin/stdout/stderr and returns its exit status.
-- Emscripten JavaScript loaders (TOOL.js): exit(status) is recorded as
-  Module.__exitStatus, so failed commands keep their exit status.
-- The module of a GNU utility is reset after each run, which prevents stale
-  C globals and getopt state.
+Every program here is the real program, compiled to WebAssembly. The changes below are what
+it took to make them behave in a web page as they do on Linux: exit statuses, standard
+input/output/error as real files, error messages, and output that is not lost.
 
-Added for the Pipelines and reproducibility practical (also in execIO):
-- Before each run the program's PROXYFS view of /shared is remounted, so a
-  file that another program deleted and made again is not served from a
-  stale node cache. (Without this, re-running a Snakemake job whose output
-  had been deleted failed with "RuntimeError: abort(Error: FS error)".)
-- A module that aborted (no exit status) is reset before the next run.
-- The HTSlib utilities (bgzip, tabix) are reset after each run as well. They
-  keep getopt's state between runs, so a second `bgzip -dc FILE` (which the
-  terminal's zcat uses) was read as `bgzip FILE` and compressed the file in
-  place, renaming it FILE.gz.
+The runner (aioli.js) and the programs are the same files as in the practical "AI agents for
+bioinformatics", for which most of this was done; a few items below therefore name a program
+of that practical which is not part of this one (fastp). They replace the runner of the first
+version of this practical (1 October 2026), in which a program was not started afresh for each
+run: there minimap2 kept the read group of an earlier "-R" and wrote it into every later
+alignment, and a program that was asked for more than one thread ("samtools sort -@ 2") left
+the shared file system unusable until the page was loaded again.
 
-execio-source.txt is the readable source of execIO as embedded in aioli.js.
+1. aioli.js – the runner
+------------------------
+a. A method execIO was added to Aioli's worker. It runs one program with standard input, output
+   and error bound to real file descriptors, and returns the program's exit status.
+   execio-source.txt is its readable source (in aioli.js the worker is one long encoded string).
+   In execIO:
+   - Before each run the program's view of the shared folder (/shared, PROXYFS) is mounted
+     again, so that a file another program deleted and made again is not served from a stale
+     cache of names.
+   - After each run the program's module is started afresh, as a process is on Linux. A module
+     that stays keeps its C globals from one run to the next: getopt's state, for one – and
+     minimap2 kept the read group of an earlier "-R" and wrote it into every later alignment.
+     (Upstream starts only some programs afresh; here it is every program. The base module,
+     which holds the files, stays.)
+   - Starting a program afresh needs no network. In _setup, which sets a program up, the
+     program's loader is read once and its factory is kept; its .wasm file is compiled once and
+     the compiled module is kept (each start makes a new instance of it, with new memory); its
+     .data package, where it has one, is kept in memory after the first start. Upstream fetches
+     the three files again for every start – from the browser's cache while that is fresh, and
+     from the server once it is stale (after ten minutes on GitHub Pages) – so that every
+     command needed the network, and stopped working when the connection dropped.
+   - Only the program that is asked for is set up. One that cannot be loaded (the connection is
+     gone at its first use) reports that, does not stop the other programs, and is tried again
+     the next time. If the start afresh after a run fails, the run's result is still returned.
+   - The shared file system gets a function fstat. The loader of fastp (a program of the other
+     practical, built with an older Emscripten) calls it when a file is opened for appending.
+     (Emscripten bug 12367; the Biowasm build script patches it in the minified loaders only.)
+   - The errors of the shared file system get their names (ENOENT, EACCES …). Each program has
+     its own copy of Emscripten's file-system code and recognises a foreign error only by
+     name; without the names a program that asked about a missing file with stat() or
+     access() stopped with "abort(Error: FS error)" – "sort no_such_file" did. Now it prints
+     its own message.
+   - After main() returns, fflush(0) is called where the program exports it (none of the
+     programs here does; fastp, in the other practical).
+   - "2>&1" opens standard output and standard error on the same file for appending.
+   - Each program gets a link /home/student -> the shared folder that holds the student's
+     files. Paths in the student's home therefore reach the programs as they were typed, and
+     the programs print and record them as typed (md5sum's output, @PG lines of SAM files,
+     the command lines in VCF headers).
+   - A run reports how much of its standard input the program read: where the program left
+     the input (stdinPos – after "head -n 1": behind the first line) and the furthest byte it
+     read (stdinMax – what a program takes from a pipe, where it cannot go back). The shell
+     needs this for a program that stands in a block, a function or a script with redirected
+     input ({ head -n 1; sort; } < FILE, f() { wc -l; }; f < FILE): what the program did not
+     read is the input of the next command, and a program that does not read at all
+     (while read x; do samtools …; done < LIST) leaves the list to the loop.
+   - A run reports in which order the program wrote to its standard output and to its standard
+     error (which of the two, and how many bytes, in turn). Where both go the same way – to the
+     terminal, or into the file of a script that was started with "> log.txt 2>&1" – the page
+     passes them on in that order: "wc -l a.txt nosuch b.txt" prints the count of a.txt, then the
+     message about the missing file, then the count of b.txt, as on Linux. (Before, a program's
+     messages always came before its output.) What a program keeps in the C library's buffer
+     until it ends is written when it ends, as on Linux when the output is not a terminal.
+   - A run can have the clock of another time zone, and the time zone has its short name.
+     Emscripten takes the time zone from the browser and takes no notice of TZ: "date -u" printed
+     the local time with a Z behind it, and the zone as "British Summer Time". For "date -u",
+     "TZ=UTC date" and "TZ=America/New_York date" the page asks for the clock of that zone (the
+     JavaScript Date that the program's runtime uses gives the time of that zone for the length
+     of the run; any zone that the browser knows by its name – Europe/Paris, Asia/Tokyo). "date"
+     prints BST, CEST, EDT … where the browser knows the short name; TZ=GMT is called GMT.
+     (For dates of the years 1968 to 1971 in the United Kingdom, date here prints GMT where a
+     Linux computer prints BST: clocks were one hour ahead all year then.) The page asks for
+     this clock for date, for awk (strftime, mktime) and for diff (the file times in the headers
+     of diff -u and diff -c).
+   - The input of a program can be handed over a line at a time. sed in a block whose input is
+     a file ({ sed 1q; cat; } < FILE) must leave what it did not use to the next command; on
+     Linux the C library puts the rest back when sed ends, here sed never gets more than the
+     line it is at. (Only then: every other run reads as much as it asks for.)
+   - /dev/zero is there for the programs (head -c 1000 /dev/zero > FILE). Emscripten has
+     /dev/null, /dev/random and /dev/urandom, and no /dev/zero.
+   - The environment of the shell reaches the programs. Emscripten gives every program the
+     same made-up environment (USER=web_user, HOME=/home/web_user, LANG from the browser),
+     built when the program is set up, from a table that nothing outside the program's loader
+     can reach: awk's ENVIRON showed that, and "export NAME=value" or
+     "LC_ALL=C sort" changed nothing. Now room is kept behind a program's environment when the
+     program is set up (in _setup: the two functions through which the C library asks for the
+     environment, environ_sizes_get and environ_get, are wrapped – found by their names, also
+     in loaders that have shortened the names of their imports), and before each run execIO
+     writes the variables that the page hands over (io.env, a list of NAME=value) into that
+     room: up to 1,000 variables and 128 KiB. The page hands over what the shell exports
+     (assets/js/tools-wasm.js, envOf). A program that does not ask for its environment
+     (bgzip, minimap2) is not touched.
+   - A program can be told that its standard input is a pipe (io.fifo). Here a pipe is a file,
+     and a program that asks what its input is – fstat() – learns that it is a regular file.
+     GNU wc sets the width of its columns by that: "cat f | wc" prints "      3       3      17"
+     on Linux and printed " 3  3 17" here. With io.fifo the file that is the program's input
+     answers that it is a pipe. The page sets it for wc only – every other program reads its
+     input as before.
+   - A file that a program renames over another file leaves no ghost behind. "sed -i" writes a
+     temporary file and renames it to the name of the file it edits. The shared file system is
+     that of an older Emscripten, whose rename takes the renamed file out of its table of names
+     and puts it back under the new name – but leaves the file that had that name before in the
+     table. While the new file is there, it is found first. Once it is removed (rm, mv, gzip),
+     the old one is found again: for every program the file was "there" with the contents from
+     before the edit, although no folder listed it; what programs then wrote under that name
+     went into the ghost and was lost, and "bgzip -d" said "File exists". (Later versions of
+     Emscripten remove the overwritten file in rename.) Now the rename of the shared file
+     system is wrapped: the file that was at the new name before is taken out of the table.
+   - A program that renames a file does not leave the old NAME behind either. Each program sees
+     the shared file system through a proxy of its own (PROXYFS, again of an older Emscripten).
+     Its rename hands the work on – and does not give the proxy's own node its new name, so that
+     the node went back into the proxy's table under the OLD name: for the rest of that run the
+     old name counted as taken. "sed -i" renames a temporary file into place for every file it
+     edits, and the C library of these builds (musl) names temporary files after the clock: two
+     files handled within one tick got the same name, the second "existed", and after 100 tries
+     sed gave up – "couldn't open temporary file ./sedXXXXXX: File exists", status 4, the
+     remaining files not edited ("sed -i 's/a/b/' *.txt" with many small files failed more
+     often than not). Now each program's proxy is wrapped once: after its rename the node has
+     its new name and folder, as in later versions of Emscripten.
+b. A method statTree was added to Aioli's worker. It answers, in one message, what is in the
+   shared file system below a folder: path, size, time of the last change and whether it is a
+   folder, for every entry. Before and after each program the page compares the programs' files
+   with its own; asked file by file – one message each – that took a second longer per program
+   in a folder of a thousand files. (Its source is in execio-source.txt too.)
+c. In the main-thread part of aioli.js the worker is kept as Aioli.lastWorker, so that the page
+   can stop a program that does not end (Ctrl+C twice in the terminal) by ending the worker.
+
+The page gives Aioli the base module (base/1.0.0) as the first tool: Aioli keeps the shared
+file system in the first one, and the programs that are started afresh must not own it.
+(That is in assets/js/tools-wasm.js, not a change to aioli.js.)
+
+2. JavaScript loaders – NAME.js next to each NAME.wasm
+------------------------------------------------------
+In the loader of every program, exit(status) is recorded as Module.__exitStatus. (The loaders of
+the programs that are no Biowasm builds – diff, cmp and the grep for "grep -P" – get this from
+their build scripts; they are also given their names there, with which their messages begin.
+base.js, the loader of the base module, runs no program and is as downloaded.)
+
+One more change, in coreutils/8.32/date.js and gawk/5.1.0/gawk.js: the day of the year. These
+loaders worked it out from the milliseconds that have passed since 1 January, local time. In a
+zone with summer time that is one hour short in summer: for a local time between 00:00 and 00:59
+on a summer day the result was the day before. GNU date then refused such dates
+("date -d 2024-07-15" printed "invalid date" in the UK and in Europe), and %j could be a day
+out. It is now the number of days between the two calendar dates. The script that makes the
+change, and can check a file, is ../licenses/local-patches/fix-day-of-year.py.
+
+3. WebAssembly programs
+-----------------------
+- GNU coreutils (17 programs) and GNU grep: one byte of each .wasm file is changed, which makes
+  the C library's stdout unbuffered. Unchanged, these builds lose output that does not end with
+  a newline ("seq 3 | tr '\n' ' '" printed nothing; "grep -lZ … | xargs -0 …" and "grep -z"
+  printed nothing). The details, the byte in each file and the checksums of the files as
+  downloaded are in coreutils/8.32/NOTICE.txt and grep/3.7/NOTICE.txt; the script is
+  ../licenses/local-patches/unbuffer-stdout.py.
+- GNU diffutils: diff and cmp were compiled for the other practical, from the release source;
+  one line of cmp.c is changed (the word "byte" in its message). See diffutils/3.10/NOTICE.txt
+  and ../licenses/diffutils-build/.
+- GNU grep 3.11 with PCRE2 10.42 (grep/3.11/, for "grep -P") was compiled for the other practical
+  from the two release sources, unchanged. See grep/3.11/NOTICE.txt and ../licenses/grep-perl-build/.
+- All other .wasm and .data files are as downloaded from the Biowasm CDN.
+
+What the page does around the programs (assets/js/tools-wasm.js) – not changes to the programs
+-----------------------------------------------------------------------------------------------
+- Thread options that ask for more than there is are taken out, with a note in the terminal:
+  samtools -@/--threads, bcftools --threads, minimap2 -t, bgzip -@/--threads. In a browser tab
+  these builds have one thread, and asked for more they stop (minimap2) or abort (samtools,
+  bcftools). An option that asks for what there is stays as it was written – minimap2 -t 1 (what
+  a Snakemake rule with "threads: 1" runs), samtools -@ 0, bgzip -@ 1 – and with it the command
+  line that the program writes into the header of its output.
+- bcftools +PLUGIN is refused with an explanation (no shared libraries in a web page).
+- gzip, gunzip, zcat, zgrep are carried out by bgzip (and grep): several files one after the
+  other, "gzip -c A B > AB.gz", "zcat A.gz B.gz"; "zcat -f" passes a file through that is not
+  compressed. The page follows GNU gzip's rules for names (a file that has the suffix already
+  is left alone, only a file with a suffix is decompressed, "gunzip NAME" means NAME.gz, -r
+  goes through folders, -q) and gives the new file the permissions and the time of the old
+  one. Options that bgzip has no counterpart for (-l, -S) are refused with a message.
+- cat is told when one of its input files is the file it writes to ("cat a b >> a",
+  "cat a b > b"): it says "input file is output file", leaves that file out and ends with
+  status 1, as GNU cat does. (The page checks this; the program cannot see that two names in the
+  shared folder are one file.)
+- tee /dev/stdout, tee /dev/stderr: the page makes the extra copy of the input (tee writes one
+  more file, which is printed once more) – in a web page the program's standard output is a file,
+  and two writers of one file would overwrite each other.
+- The environment (see 1a): the variables that the shell exports, PWD, OLDPWD and _ as bash
+  sets them. TMPDIR is left out unless it names a folder in the home folder (a program's own
+  /tmp is not the /tmp of the terminal). cmp is given en_US.UTF-8 where the language is
+  C.UTF-8: GNU cmp says "differ: char 7" when the language of the messages is C or POSIX and
+  "differ: byte 7" otherwise, and the C library of these builds (musl) takes C.UTF-8 for C
+  in that respect, where Linux's (glibc) does not.
+- wc is told when its input is a pipe, a here-document or a here-string (see 1a; bash hands a
+  here-document over as a pipe when it has 64 KiB at most, as a file when it has more).
+- date -r FILE gets the time from the page (the programs' copy of a file is newer than the file).
+- A file that the page hands to the programs is given the time of its last change as the page
+  shows it (ls -l, stat): the headers of "diff -u" and "diff -c" print the times of the two files.
+  And a file that a program wrote has, in the page, the time at which the program wrote it. diff
+  gets the clock of the time zone in TZ, as date does.
+- grep -P is carried out by a second program: the Biowasm build of GNU grep 3.7 has no PCRE
+  ("Perl matching not supported in a --disable-perl-regexp build"), so a grep command line that
+  asks for Perl patterns – -P alone or in a group of letters (-oP, -oPm1), --perl-regexp; the
+  page reads the options as grep's getopt does – goes to GNU grep 3.11 with PCRE2 10.42, built
+  for the other practical (grep/3.11/ next to this file). Every other grep runs grep 3.7.
+- The course data (/data/course) is read-only for the programs (mode 0444 in the shared file system),
+  and a change that a program makes to one of them all the same – by renaming a new file over
+  it, or removing it: the folder is writable there – is put back, with a message.
+- A read-only file of the student's own (chmod -w, or a copy of an input: cp keeps the
+  permissions) has mode 0444 there as well: a program cannot write into it ("Permission
+  denied"), but it may put a new file in its place or remove it – sed -i, gzip and bgzip do –,
+  as on Linux, where that takes a folder one may write to, not a writable file.
+- samtools: "view -s SEED.FRACTION" with a seed other than 0 gets a note (the reads that are
+  kept are not those that samtools keeps on Linux: the seed goes through the C library's
+  rand(), and musl's is not glibc's); "reheader -c COMMAND" is refused with an explanation (a
+  program cannot start a program here); "tview" is refused unless it is given -d T or -d H
+  (text or HTML: no terminal needed).
+- Whether what a program printed is shown in the terminal, or only announced ("Binary output:
+  N bytes"), is decided by what was printed, not by the options alone: "samtools view -c -b"
+  prints a count.
+- The time of a folder: when a program made, renamed or removed a name in a folder, the page
+  takes the folder's new time from the shared file system (and sets it itself for what its own
+  commands do) – "ls -td run_* | head -n 1", "find -newer", "[ dir -nt file ]".
+- What is removed, copied or moved in the terminal (rm, cp, mv – done by the page) is carried out in
+  the shared file system before the next program starts: files and folders that are gone are
+  removed there too, and a copied or moved file gets its own bytes.
+- While the real AI agent of chapter 8 (live mode) runs a step, the page keeps copies of the
+  files that programs wrote outside the agent's folder (in /keep of the base module's file
+  system, where no program looks), and writes them back if the step changed or removed such a
+  file. The copies are deleted when the agent's task ends.
+- Before each step of that agent the page also takes a copy of every file that a program wrote
+  into its own memory: if the step has to be stopped by force, the programs are started afresh
+  (their memory is lost) and those files are written again from the copies (assets/js/assistant.js).
+- When a command that the student typed is stopped by force (Ctrl+C twice), nothing holds such
+  copies: the files that programs had written are gone, and the terminal names them. This
+  practical keeps no copies of results on purpose – the pipeline makes them again.
+- Other absolute paths (/tmp/…) are inside the shared folder; in a program's messages and
+  printed output they are shown as the student typed them (without the /shared/vfs prefix).
+- Arguments that are no paths although they begin with a slash – the patterns and programs of awk,
+  sed and grep, the delimiter of "cut -d /", the characters of "tr / _" – are given to the
+  program as typed.
+- A program without input of its own that stands in a block, a function or a script with
+  redirected or piped input gets what is left of that input (see stdinPos above).

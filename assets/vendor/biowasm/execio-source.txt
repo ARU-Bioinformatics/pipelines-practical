@@ -1,18 +1,45 @@
-Readable source of the local method embedded in the Aioli worker in aioli.js.
+Readable source of the two local methods embedded in the Aioli worker in aioli.js.
 The upstream minified worker scope provides t (state), x (lazy) and k (eager).
+
+statTree(root,skip){const fs=t.fs,out=[];const walk=d=>{let names;try{names=fs.readdir(d)}catch(e){return}for(const n of names){if(n==="."||n===".."||n===skip)continue;const p=d+"/"+n;let s;try{s=fs.lstat(p)}catch(e){continue}const dir=(s.mode&61440)===16384;out.push([p,s.size,+new Date(s.mtime),dir]);if(dir)walk(p)}};walk(root);return out},
 
 async execIO(program,args,io={}){
 const tool=t.tools.find(q=>(q.program||q.tool)===program);
 if(!tool)throw new Error(`Program ${program} not found`);
-if(tool.loading===x){tool.loading=k;await this._initModules()}
+if(tool.loading===x||!tool.ready){tool.loading=k;try{await this._setup(tool);await this._setupFS()}catch(err){tool.ready=false;tool.loading=x;throw err}}
 const fs=tool.module.FS, paths=[io.stdin||"/dev/null",io.stdout||"/dev/stdout",io.stderr||"/dev/stderr"];
+if(!t.fs.fstat)t.fs.fstat=s=>t.fs.stat(typeof s==="number"?t.fs.getStream(s).path:s.path);if(!t.fs.__mvfix){t.fs.__mvfix=1;const rn=t.fs.rename;t.fs.rename=function(a,b){let was=null;try{was=t.fs.lookupPath(b).node}catch(e){}const r=rn.call(t.fs,a,b);if(was){try{let now=null;try{now=t.fs.lookupPath(b).node}catch(e){}if(now!==was)t.fs.hashRemoveNode(was)}catch(e){}}return r}}
+{const E=t.fs.ErrnoError;if(E&&!E.prototype.__named){E.prototype.__named=1;const N={2:"EACCES",6:"EAGAIN",8:"EBADF",10:"EBUSY",20:"EEXIST",28:"EINVAL",29:"EIO",31:"EISDIR",32:"ELOOP",33:"EMFILE",37:"ENAMETOOLONG",43:"ENODEV",44:"ENOENT",51:"ENOSPC",52:"ENOSYS",54:"ENOTDIR",55:"ENOTEMPTY",59:"ENOTTY",60:"ENXIO",61:"EOVERFLOW",63:"EPERM",69:"EROFS",70:"ESPIPE",75:"EXDEV",138:"ENOTSUP"};Object.defineProperty(E.prototype,"code",{get(){return N[this.errno]},configurable:true})}}
+{const P=tool.module&&tool.module.PROXYFS;if(P&&P.node_ops&&!P.__rnfix){P.__rnfix=1;const rn=P.node_ops.rename;P.node_ops.rename=function(o,nd,nn){const r=rn.call(this,o,nd,nn);o.name=nn;o.parent=nd;return r}}}
 if(tool!==t.base&&tool.ready){const d=t.config.dirShared,cwd=fs.cwd();try{fs.chdir("/");fs.unmount(d)}catch(e){}try{fs.mount(tool.module.PROXYFS,{root:d,fs:t.fs},d)}catch(e){}try{fs.chdir(cwd)}catch(e){}}
+for(const [target,link] of io.links||[]){try{fs.lookupPath(link)}catch(e){try{fs.mkdirTree(link.slice(0,link.lastIndexOf("/"))||"/")}catch(e2){}try{fs.symlink(target,link)}catch(e2){}}}
+try{fs.lookupPath("/dev/zero")}catch(e){try{const dv=fs.makedev(1,5);fs.registerDevice(dv,{read(q,b,o,l){b.fill(0,o,o+l);return l},write(q,b,o,l){return l}});fs.mkdev("/dev/zero",dv)}catch(e2){}}
 tool.stdout="";tool.stderr="";tool.module.__exitStatus=null;
-for(let fd=0;fd<3;fd++){try{if(fs.streams[fd])fs.close(fs.streams[fd])}catch(e){} const st=fs.open(paths[fd],fd===0?"r":io.merge?"a":"w");if(st.fd!==fd)throw new Error("Cannot bind standard file descriptor "+fd)}
+let in0=null,inMax=0;const outOrder=[];
+for(let fd=0;fd<3;fd++){try{if(fs.streams[fd])fs.close(fs.streams[fd])}catch(e){} const st=fs.open(paths[fd],fd===0?"r":io.merge?"a":"w");if(st.fd!==fd)throw new Error("Cannot bind standard file descriptor "+fd);if(fd===0&&io.stdin&&io.fifo&&st.node&&st.node.node_ops&&st.node.node_ops.getattr){const o=st.node.node_ops,ga=o.getattr;st.node.node_ops=Object.assign({},o,{getattr(n){const a=ga.call(o,n);a.mode=(a.mode&~61440)|4096;return a}})}if(fd===0&&io.stdin){in0=st;const ops=st.stream_ops,rd=ops&&ops.read;if(rd)st.stream_ops=Object.assign({},ops,{read(q,b,o,l,p){let c=rd.call(ops,q,b,o,io.lines&&l>256?256:l,p);if(io.lines&&c>1){const i=b.subarray(o,o+c).indexOf(10);if(i>=0&&i<c-1)c=i+1}if(c>0&&p+c>inMax)inMax=p+c;return c}})}if(fd>0&&!io.merge){const ops=st.stream_ops,wr=ops&&ops.write;if(wr)st.stream_ops=Object.assign({},ops,{write(q,b,o,l,p,c){const k=wr.call(ops,q,b,o,l,p,c);if(k>0){const z=outOrder.length;if(z&&outOrder[z-2]===fd)outOrder[z-1]+=k;else outOrder.push(fd,k)}return k}})}}
 let failure=null;
-try{tool.module.callMain(args)}catch(e){failure=e;if(typeof e.status==="number")tool.module.__exitStatus=e.status}
+const __clock=self.Date;if(io.zone||io.zoneName){const R=__clock,Z=io.zone||null;let F=null;if(Z&&Z!=="UTC")try{F=new Intl.DateTimeFormat("en-US",{timeZone:Z,hourCycle:"h23",year:"numeric",month:"numeric",day:"numeric",hour:"numeric",minute:"numeric",second:"numeric",weekday:"short"})}catch(e){F=null}const WD={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};const parts=t=>{const o={};for(const p of F.formatToParts(new R(t)))o[p.type]=p.value;const f={y:+o.year,mo:+o.month-1,d:+o.day,h:+o.hour%24,mi:+o.minute,s:+o.second,wd:WD[o.weekday]};f.off=Math.round((R.UTC(f.y,f.mo,f.d,f.h,f.mi,f.s)-Math.floor(t/1e3)*1e3)/6e4);return f};const zone=d=>{if(Z==="UTC"||Z==="GMT")return Z;try{const off=F?parts(d.getTime()).off:-R.prototype.getTimezoneOffset.call(d);for(const l of["en-GB","en-US","en-AU","en-NZ","en-IN","en-CA","en-ZA","ja-JP","ko-KR"]){const p=new Intl.DateTimeFormat(l,Object.assign({timeZoneName:"short"},F?{timeZone:Z}:{})).formatToParts(d).find(q=>q.type==="timeZoneName");if(p&&/^[A-Za-z]{2,6}$/.test(p.value)&&(!/^(GMT|UTC)$/.test(p.value)||off===0))return p.value}}catch(e){}return null};class D extends R{constructor(...a){if(a.length>1&&Z==="UTC")super(R.UTC(...a));else if(a.length>1&&F){const g=R.UTC(...a);let t=g-parts(g).off*6e4;t=g-parts(t).off*6e4;super(t)}else super(...a)}toTimeString(){const s=R.prototype.toTimeString.call(this);if(isNaN(this.getTime()))return s;const z=zone(this);return z?s.replace(/\(.*\)$/,"("+z+")"):s}}if(Z==="UTC"){for(const k of["FullYear","Month","Date","Day","Hours","Minutes","Seconds","Milliseconds"])D.prototype["get"+k]=function(){return R.prototype["getUTC"+k].call(this)};D.prototype.getTimezoneOffset=function(){return 0}}else if(F){const G={FullYear:"y",Month:"mo",Date:"d",Day:"wd",Hours:"h",Minutes:"mi",Seconds:"s"};for(const k in G)D.prototype["get"+k]=function(){const t=this.getTime();return isNaN(t)?NaN:parts(t)[G[k]]};D.prototype.getTimezoneOffset=function(){const t=this.getTime();return isNaN(t)?NaN:-parts(t).off}}self.Date=D}
+if(io.env&&tool.__env&&tool.__env.arr&&tool.__env.mem){try{const E=tool.__env,U8=new Uint8Array(E.mem.buffer),U32=new Uint32Array(E.mem.buffer),enc=new TextEncoder();let p=E.buf,k=0;const end=E.buf+E.size+131072,max=E.n+1000;for(const v of io.env){const b=enc.encode(v);if(k>=max-1||p+b.length+1>end)break;U8.set(b,p);U8[p+b.length]=0;U32[(E.arr>>2)+k++]=p;p+=b.length+1}U32[(E.arr>>2)+k]=0}catch(e){}}
+try{tool.module.callMain(args)}catch(e){failure=e;if(typeof e.status==="number")tool.module.__exitStatus=e.status}finally{self.Date=__clock}
+try{if(tool.module._fflush)tool.module._fflush(0)}catch(e){}
 for(let fd=0;fd<3;fd++){try{if(fs.streams[fd])fs.close(fs.streams[fd])}catch(e){}}
 for(let fd=0;fd<3;fd++)fs.open(["/dev/stdin","/dev/stdout","/dev/stderr"][fd],fd===0?"r":"w");
 const status=Number.isInteger(tool.module.__exitStatus)?tool.module.__exitStatus:(failure?1:null);
-const result={code:status,stdout:tool.stdout,stderr:tool.stderr,error:failure?String(failure):null};if(["bowtie2","coreutils","gawk","grep","sed","htslib"].includes(tool.tool)||(failure&&!Number.isInteger(tool.module.__exitStatus))){const cwd=t.base.module.FS.cwd();Object.assign(tool,tool.config);tool.ready=false;await this.init();this.cd(cwd);}return result;
+const result={code:status,stdout:tool.stdout,stderr:tool.stderr,error:failure?String(failure):null,stdinPos:in0&&in0.position>0?in0.position:0,stdinMax:inMax,order:outOrder};if(tool!==t.base){const cwd=t.base.module.FS.cwd();Object.assign(tool,tool.config);tool.ready=false;tool.module=null;try{await this._setup(tool);await this._setupFS()}catch(err){tool.ready=false;tool.loading=x}this.cd(cwd);}return result;
 },
+
+In the upstream method _setup(e), which sets a program up, this part
+
+self.importScripts(`${e.urlPrefix}/${e.program}.js`),e.module=await Module({thisProgram:e.program,…
+
+was replaced by
+
+const K=(t.__kept||(t.__kept={}))[`${e.urlPrefix}/${e.program}`]||(t.__kept[`${e.urlPrefix}/${e.program}`]={});
+K.factory||(self.importScripts(`${e.urlPrefix}/${e.program}.js`),K.factory=self.Module);
+if(!K.wasm){const u=`${e.urlPrefix}/${e.program}.wasm`;K.wasm=WebAssembly.compileStreaming(fetch(u)).catch(()=>fetch(u).then(q=>{if(!q.ok)throw new Error(`${u} could not be loaded (${q.status})`);return q.arrayBuffer()}).then(b=>WebAssembly.compile(b)))}
+let wasmModule;try{wasmModule=await K.wasm}catch(err){K.wasm=null;throw err}
+const EV=e.__env={arr:0,buf:0,n:0,size:0,mem:null},memOf=o=>{try{for(const v of Object.values(o||{}))if(v instanceof WebAssembly.Memory)return v}catch(x){}return null};
+e.module=await K.factory({instantiateWasm:(info,done)=>{try{const seen=new Set();for(const ns of Object.values(info)){if(!ns||typeof ns!=="object"||seen.has(ns))continue;seen.add(ns);EV.mem=EV.mem||memOf(ns);let kg=null,ks=null;for(const k of Object.keys(ns)){const v=ns[k];if(typeof v!=="function")continue;if(k==="environ_get"||v.name==="_environ_get")kg=k;else if(k==="environ_sizes_get"||v.name==="_environ_sizes_get")ks=k}if(kg===null||ks===null)continue;const sg=ns[ks],g=ns[kg];ns[ks]=(pc,pb)=>{const r=sg(pc,pb);try{const H=new Uint32Array(EV.mem.buffer);EV.n=H[pc>>2];EV.size=H[pb>>2];H[pc>>2]=EV.n+1000;H[pb>>2]=EV.size+131072}catch(x){}return r};ns[kg]=(arr,buf)=>{const r=g(arr,buf);try{new Uint32Array(EV.mem.buffer)[(arr>>2)+EV.n]=0;EV.arr=arr;EV.buf=buf}catch(x){}return r}}}catch(x){}
+WebAssembly.instantiate(wasmModule,info).then(inst=>{try{EV.mem=memOf(inst.exports)||EV.mem}catch(x){}done(inst,wasmModule)});return{}},
+getPreloadedPackage:(name,size)=>{if(K.data&&K.data.byteLength)return K.data.slice(0);if(K.data===undefined){K.data=null;fetch(name).then(q=>q.ok?q.arrayBuffer():null).then(b=>{K.data=b&&b.byteLength===size?b:null}).catch(()=>{K.data=undefined})}return null},
+thisProgram:e.program,…

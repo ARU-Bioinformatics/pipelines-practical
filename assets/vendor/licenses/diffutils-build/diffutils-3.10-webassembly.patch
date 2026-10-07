@@ -1,0 +1,14 @@
+--- a/src/cmp.c
++++ b/src/cmp.c
+@@ -48,7 +48,10 @@
+ static bool
+ hard_locale_LC_MESSAGES (void)
+ {
+-#if defined LC_MESSAGES && ENABLE_NLS
++  /* The WebAssembly build of the practical is configured without NLS, but its
++     locale is not the POSIX locale (LANG is en_GB.UTF-8, say): cmp says "byte",
++     as the builds of the Linux distributions do outside the POSIX locale.  */
++#if defined LC_MESSAGES
+   return hard_locale (LC_MESSAGES);
+ #else
+   return false;

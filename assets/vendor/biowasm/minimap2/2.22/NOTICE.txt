@@ -1,12 +1,14 @@
 minimap2 2.22
-License: MIT
+Licence: MIT (LICENSE in this folder)
 Upstream source: https://github.com/lh3/minimap2/tree/v2.22
-WebAssembly build provider: Biowasm (https://biowasm.com/)
-Build source and scripts: https://github.com/biowasm/biowasm
-Artifact origin: https://biowasm.com/cdn/v3/minimap2/2.22/
-Retrieved: 2026-09-30
+WebAssembly build: Biowasm (https://biowasm.com/), downloaded from
+  https://biowasm.com/cdn/v3/minimap2/2.22/ on 2026-09-30
+Build recipes: https://github.com/biowasm/biowasm (a pinned copy is in ../../../licenses/biowasm-build/)
 
-Local JavaScript glue modification: record each Emscripten exit status in
-Module.__exitStatus so the practical runtime can preserve command failures.
-Modified files: minimap2.js
-The WebAssembly binaries and associated data assets are unmodified.
+Local change to the JavaScript loader: exit(status) is recorded as Module.__exitStatus, so that the
+terminal of the practical keeps the exit status of a failed command.
+Modified file: minimap2.js
+minimap2.wasm and minimap2.data are unmodified.
+
+Checked against a native build of the same version: the alignments of the course data are identical,
+byte for byte (minimap2 -ax sr).

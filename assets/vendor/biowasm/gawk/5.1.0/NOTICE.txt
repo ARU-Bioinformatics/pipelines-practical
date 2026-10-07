@@ -1,12 +1,17 @@
 GNU Awk 5.1.0
-License: GPL-3.0-or-later
+Licence: GPL-3.0-or-later (COPYING and LICENSE in this folder)
 Upstream source: https://ftp.gnu.org/gnu/gawk/gawk-5.1.0.tar.xz
-WebAssembly build provider: Biowasm (https://biowasm.com/)
-Build source and scripts: https://github.com/biowasm/biowasm
-Artifact origin: https://biowasm.com/cdn/v3/gawk/5.1.0/
-Retrieved: 2026-09-30
+  (a copy is in ../../../licenses/sources/, with the build recipe in ../../../licenses/biowasm-build/)
+WebAssembly build: Biowasm (https://biowasm.com/), downloaded from
+  https://biowasm.com/cdn/v3/gawk/5.1.0/ on 2026-09-30
+Build recipes: https://github.com/biowasm/biowasm (a pinned copy is in ../../../licenses/biowasm-build/)
 
-Local JavaScript glue modification: record each Emscripten exit status in
-Module.__exitStatus so the practical runtime can preserve command failures.
-Modified files: gawk.js
-The WebAssembly binaries and associated data assets are unmodified.
+Local changes to the JavaScript loader, gawk.js:
+1. exit(status) is recorded as Module.__exitStatus, so that the terminal of the practical keeps the exit
+   status of a failed command.
+2. The day of the year (tm_yday in the C library's localtime and mktime, which strftime() and mktime()
+   of awk use) is the number of days between the two calendar dates. As downloaded, the loader worked
+   it out from the milliseconds since 1 January, local time – one hour short in summer time, so that for
+   a local time between 00:00 and 00:59 on a summer day it was the day before. The script is
+   ../../../licenses/local-patches/fix-day-of-year.py (applied as: fix-day-of-year.py gawk.js; two places).
+gawk.wasm is unmodified.

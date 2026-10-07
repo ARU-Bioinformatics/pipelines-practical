@@ -1,0 +1,42 @@
+GNU grep 3.11 with PCRE2 10.42: grep-perl ("grep -P")
+Licences: GNU grep – GPL-3.0-or-later (COPYING in this folder); PCRE2 – BSD 3-clause with the PCRE2
+exemption (PCRE2-LICENCE in this folder).
+Upstream sources: https://ftp.gnu.org/gnu/grep/grep-3.11.tar.xz
+                  https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.42/pcre2-10.42.tar.bz2
+
+This program was compiled to WebAssembly for the practical "AI agents for bioinformatics", whose
+terminal this practical shares – it is not a Biowasm build.
+Compiler: Emscripten 6.0.10. PCRE2: the 8-bit library, with Unicode support, without the
+just-in-time compiler (there is none for WebAssembly: grep uses PCRE2's interpreter, as it does on
+any computer where the just-in-time compiler is not available). grep: configured with
+--enable-perl-regexp --disable-nls; no threads.
+Everything needed to build it again is in ../../../licenses/:
+  sources/grep-3.11.tar.xz              the source of the release, as published by GNU
+  sources/pcre2-10.42.tar.bz2           the source of the release, as published by the PCRE2 project
+  grep-perl-build/build-grep-perl.sh    the build script (it also records exit(status), sets the
+                                        program's name and the name of its .wasm file in the loader)
+  grep-perl-build/grep-perl-splice.c    a splice() that always fails with EINVAL (see below)
+  grep-perl-build/README.txt            how to run it
+
+Both sources are compiled unchanged. One function is added at link time: Emscripten's headers
+declare splice() and SPLICE_F_MOVE, but its C library has no splice(). grep calls it only to skip
+the rest of a pipe when its own output goes to /dev/null, and is written to read instead when the
+call fails with EINVAL – which the added function always does.
+
+Changes to the JavaScript loader, grep-perl.js (made by the build script): exit(status) is recorded
+as Module.__exitStatus, so that the terminal of the practical keeps the exit status; the program is
+called "grep" (its messages begin "grep:"), whatever name the runtime hands it; and the loader looks
+for grep-perl.wasm.
+
+In the terminal of the practical this program runs when a grep command asks for Perl patterns: -P
+alone or in a group of letters (-oP, -oPm1), --perl-regexp. (The Biowasm build of grep 3.7 in
+../3.7/, which runs every other grep, was built without PCRE.) So "grep -P --version" says 3.11,
+and "grep --version" 3.7.
+
+Checked against GNU grep 3.11 with PCRE2 10.42 on Linux (Ubuntu 24.04) with 874 command lines that an
+independent reviewer wrote to find differences – what -o prints after \K, look-behind and look-ahead,
+possessive counts and atomic groups, references to groups, classes and escapes, characters outside
+ASCII, lines that end with a carriage return, files with NUL bytes, patterns that PCRE2 refuses,
+the backtracking limit, lines of context, -m, -r, -f, -z. What "grep -P" printed and its exit status
+were the same in all of them but one: "grep -P x f > f", where the terminal has emptied the file before
+grep looks (status 1) and GNU grep refuses a file that is also its output (status 2).

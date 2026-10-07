@@ -1,12 +1,11 @@
-GNU sed 4.8
-Licence: GPL-3.0-or-later (COPYING and LICENSE in this folder)
-Upstream source: https://ftp.gnu.org/gnu/sed/sed-4.8.tar.xz
-  (a copy is in ../../../licenses/sources/, with the build recipe in ../../../licenses/biowasm-build/)
+SAMtools 1.17
+Licence: MIT/Expat (LICENSE in this folder)
+Upstream source: https://github.com/samtools/samtools/tree/1.17 (with HTSlib 1.17)
 WebAssembly build: Biowasm (https://biowasm.com/), downloaded from
-  https://biowasm.com/cdn/v3/sed/4.8/ on 2026-09-30
+  https://biowasm.com/cdn/v3/samtools/1.17/ on 2026-09-30
 Build recipes: https://github.com/biowasm/biowasm (a pinned copy is in ../../../licenses/biowasm-build/)
 
 Local change to the JavaScript loader: exit(status) is recorded as Module.__exitStatus, so that the
 terminal of the practical keeps the exit status of a failed command.
-Modified file: sed.js
-sed.wasm is unmodified.
+Modified file: samtools.js
+samtools.wasm and samtools.data are unmodified.

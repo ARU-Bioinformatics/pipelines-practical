@@ -1,12 +1,30 @@
 GNU grep 3.7
-License: GPL-3.0-or-later
+Licence: GPL-3.0-or-later (COPYING and LICENSE in this folder)
 Upstream source: https://ftp.gnu.org/gnu/grep/grep-3.7.tar.xz
-WebAssembly build provider: Biowasm (https://biowasm.com/)
-Build source and scripts: https://github.com/biowasm/biowasm
-Artifact origin: https://biowasm.com/cdn/v3/grep/3.7/
-Retrieved: 2026-09-30
+  (a copy is in ../../../licenses/sources/, with the build recipe in ../../../licenses/biowasm-build/)
+WebAssembly build: Biowasm (https://biowasm.com/), downloaded from
+  https://biowasm.com/cdn/v3/grep/3.7/ on 2026-09-30
+Build recipes: https://github.com/biowasm/biowasm (a pinned copy is in ../../../licenses/biowasm-build/)
 
-Local JavaScript glue modification: record each Emscripten exit status in
-Module.__exitStatus so the practical runtime can preserve command failures.
-Modified files: grep.js
-The WebAssembly binaries and associated data assets are unmodified.
+Local changes
+
+1. JavaScript loader, grep.js: exit(status) is recorded as Module.__exitStatus, so that the terminal of
+   the practical keeps the exit status of a failed command.
+
+2. WebAssembly program, grep.wasm: ONE BYTE is changed, which makes the C library's stdout unbuffered –
+   the same change as in the coreutils programs (see ../../coreutils/8.32/NOTICE.txt). As built, grep
+   loses output that does not end with a newline: "grep -lZ PATTERN FILES | xargs -0 …" and "grep -z"
+   printed nothing. The change sets buf_size of the C library's stdout object in the program's initial
+   memory from 1024 to 0, exactly as it is for stderr; nothing else is changed and the file keeps its
+   size. The script is ../../../licenses/local-patches/unbuffer-stdout.py (applied as:
+   unbuffer-stdout.py grep.wasm).
+
+  grep.wasm    byte 211803: 04 -> 00   as downloaded: sha256 601e3f5a11098349169928298f4b37f8f29fe35d38e7c1dcc7377a99aa6f3c86
+
+SHA256SUMS lists the files as they are here (after both changes).
+
+This build has no PCRE ("grep: Perl matching not supported in a --disable-perl-regexp build").
+In the terminal of the practical, a grep command that asks for Perl patterns (-P, --perl-regexp)
+is therefore carried out by a second program: GNU grep 3.11 with PCRE2 10.42 (../3.11/),
+built for the practical "AI agents for bioinformatics", whose terminal this practical shares.
+Every other use of grep runs this program.

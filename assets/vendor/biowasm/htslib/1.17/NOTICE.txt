@@ -1,0 +1,13 @@
+HTSlib 1.17 utilities: bgzip, tabix
+Licence: MIT/Expat and modified 3-clause BSD (LICENSE in this folder)
+Upstream source: https://github.com/samtools/htslib/tree/1.17
+WebAssembly build: Biowasm (https://biowasm.com/), downloaded from
+  https://biowasm.com/cdn/v3/htslib/1.17/ on 2026-09-30
+Build recipes: https://github.com/biowasm/biowasm (a pinned copy is in ../../../licenses/biowasm-build/)
+
+Local change to the JavaScript loader: exit(status) is recorded as Module.__exitStatus, so that the
+terminal of the practical keeps the exit status of a failed command.
+Modified files: bgzip.js, tabix.js
+bgzip.wasm and tabix.wasm are unmodified.
+
+In the terminal of the practical, gzip, gunzip, zcat and zgrep are carried out by bgzip.
